@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_SOURCE_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_BINARY_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 # Utility rule file for info.
 
@@ -54,7 +54,7 @@ CMAKE_BINARY_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
 include CMakeFiles/info.dir/progress.make
 
 CMakeFiles/info:
-	/usr/bin/cmake -P /home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles/print_usage.cmake
+	/usr/bin/cmake -P /home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles/print_usage.cmake
 
 info: CMakeFiles/info
 info: CMakeFiles/info.dir/build.make
@@ -71,6 +71,6 @@ CMakeFiles/info.dir/clean:
 .PHONY : CMakeFiles/info.dir/clean
 
 CMakeFiles/info.dir/depend:
-	cd /home/seanwalkeri95/deal.II/dealii/examples/step-57 && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles/info.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/sean/deal.II/dealii/examples/AA-step-57 && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles/info.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/info.dir/depend
 

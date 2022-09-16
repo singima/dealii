@@ -1,4 +1,4 @@
-# Install script for directory: /home/seanwalkeri95/deal.II/dealii/examples/step-57
+# Install script for directory: /home/sean/deal.II/dealii/examples/AA-step-57
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -45,5 +45,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/seanwalkeri95/deal.II/dealii/examples/step-57/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/sean/deal.II/dealii/examples/AA-step-57/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

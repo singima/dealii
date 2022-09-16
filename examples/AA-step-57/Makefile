@@ -48,10 +48,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_SOURCE_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_BINARY_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -80,9 +80,9 @@ edit_cache/fast: edit_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles /home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles /home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles/progress.marks
 	$(MAKE) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles 0
 .PHONY : all
 
 # The main clean target

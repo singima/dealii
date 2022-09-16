@@ -4,7 +4,7 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
-  "/home/seanwalkeri95/deal.II/dealii/examples/step-57/step-57.cc" "/home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles/step-57.dir/step-57.cc.o"
+  "/home/sean/deal.II/dealii/examples/AA-step-57/step-57.cc" "/home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles/step-57.dir/step-57.cc.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 
@@ -18,14 +18,14 @@ set(CMAKE_TARGET_DEFINITIONS_CXX
 set(CMAKE_CXX_TARGET_INCLUDE_PATH
   "/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
   "/usr/lib/x86_64-linux-gnu/openmpi/include"
+  "/home/sean/dealii-candi/parmetis-4.0.3/include"
   "/usr/include/trilinos"
   "/usr/include/hdf5/openmpi"
   "/usr/include/scotch"
   "/usr/include/suitesparse"
-  "/usr/include/petsc"
-  "/usr/lib/x86_64-linux-gnu/hdf5/openmpi/include"
-  "/usr/include/opencascade"
-  "/usr/include/slepc"
+  "/home/sean/dealii-candi/petsc-3.13.1/include"
+  "/home/sean/dealii-candi/hdf5-1.10.7/include"
+  "/home/sean/dealii-candi/oce-OCE-0.18.3/include/oce"
   )
 
 # Targets to which this target links.

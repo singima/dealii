@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_SOURCE_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_BINARY_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 # Include any dependencies generated for this target.
 include CMakeFiles/step-57.dir/depend.make
@@ -59,16 +59,16 @@ include CMakeFiles/step-57.dir/flags.make
 
 CMakeFiles/step-57.dir/step-57.cc.o: CMakeFiles/step-57.dir/flags.make
 CMakeFiles/step-57.dir/step-57.cc.o: step-57.cc
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/step-57.dir/step-57.cc.o"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/step-57.dir/step-57.cc.o -c /home/seanwalkeri95/deal.II/dealii/examples/step-57/step-57.cc
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/step-57.dir/step-57.cc.o"
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/step-57.dir/step-57.cc.o -c /home/sean/deal.II/dealii/examples/AA-step-57/step-57.cc
 
 CMakeFiles/step-57.dir/step-57.cc.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/step-57.dir/step-57.cc.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/seanwalkeri95/deal.II/dealii/examples/step-57/step-57.cc > CMakeFiles/step-57.dir/step-57.cc.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/sean/deal.II/dealii/examples/AA-step-57/step-57.cc > CMakeFiles/step-57.dir/step-57.cc.i
 
 CMakeFiles/step-57.dir/step-57.cc.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/step-57.dir/step-57.cc.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/seanwalkeri95/deal.II/dealii/examples/step-57/step-57.cc -o CMakeFiles/step-57.dir/step-57.cc.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/sean/deal.II/dealii/examples/AA-step-57/step-57.cc -o CMakeFiles/step-57.dir/step-57.cc.s
 
 # Object files for target step-57
 step__57_OBJECTS = \
@@ -79,15 +79,8 @@ step__57_EXTERNAL_OBJECTS =
 
 step-57: CMakeFiles/step-57.dir/step-57.cc.o
 step-57: CMakeFiles/step-57.dir/build.make
-step-57: /usr/lib/x86_64-linux-gnu/libdeal.ii.g.so.9.2.0
-step-57: /usr/lib/x86_64-linux-gnu/libboost_iostreams.so
-step-57: /usr/lib/x86_64-linux-gnu/libboost_serialization.so
-step-57: /usr/lib/x86_64-linux-gnu/libboost_system.so
-step-57: /usr/lib/x86_64-linux-gnu/libboost_thread.so
-step-57: /usr/lib/x86_64-linux-gnu/libboost_regex.so
-step-57: /usr/lib/x86_64-linux-gnu/libboost_chrono.so
-step-57: /usr/lib/x86_64-linux-gnu/libboost_date_time.so
-step-57: /usr/lib/x86_64-linux-gnu/libboost_atomic.so
+step-57: /usr/local/lib/libdeal_II.g.so.10.0.0-pre
+step-57: /usr/lib/x86_64-linux-gnu/openmpi/lib/libopen-pal.so
 step-57: /usr/lib/x86_64-linux-gnu/libtrilinos_pike-blackbox.so
 step-57: /usr/lib/x86_64-linux-gnu/libtrilinos_trilinoscouplings.so
 step-57: /usr/lib/x86_64-linux-gnu/libtrilinos_piro.so
@@ -191,7 +184,6 @@ step-57: /usr/lib/x86_64-linux-gnu/libpord.so
 step-57: /usr/lib/x86_64-linux-gnu/libmumps_common.so
 step-57: /usr/lib/x86_64-linux-gnu/hdf5/openmpi/libhdf5.so
 step-57: /usr/lib/x86_64-linux-gnu/libtbb.so
-step-57: /usr/lib/x86_64-linux-gnu/libz.so
 step-57: /usr/lib/x86_64-linux-gnu/libptscotch.so
 step-57: /usr/lib/x86_64-linux-gnu/libptscotcherr.so
 step-57: /usr/lib/x86_64-linux-gnu/libscotch.so
@@ -204,59 +196,73 @@ step-57: /usr/lib/x86_64-linux-gnu/libcolamd.so
 step-57: /usr/lib/x86_64-linux-gnu/libcamd.so
 step-57: /usr/lib/x86_64-linux-gnu/libsuitesparseconfig.so
 step-57: /usr/lib/x86_64-linux-gnu/libamd.so
-step-57: /usr/lib/x86_64-linux-gnu/libmetis.so
-step-57: /usr/lib/x86_64-linux-gnu/libparpack.so
-step-57: /usr/lib/x86_64-linux-gnu/libarpack.so
-step-57: /usr/lib/x86_64-linux-gnu/libassimp.so
-step-57: /usr/lib/x86_64-linux-gnu/libgsl.so
-step-57: /usr/lib/x86_64-linux-gnu/libgslcblas.so
-step-57: /usr/lib/x86_64-linux-gnu/hdf5/openmpi/lib/lib/libhdf5_hl.so
-step-57: /usr/lib/x86_64-linux-gnu/hdf5/openmpi/lib/lib/libhdf5.so
-step-57: /usr/lib/x86_64-linux-gnu/libmuparser.so
-step-57: /usr/lib/x86_64-linux-gnu/libnetcdf_c++.so
-step-57: /usr/lib/x86_64-linux-gnu/libnetcdf.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKBO.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKBool.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKBRep.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKernel.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKFeat.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKFillet.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKG2d.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKG3d.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKGeomAlgo.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKGeomBase.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKHLR.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKIGES.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKMath.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKMesh.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKOffset.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKPrim.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKShHealing.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKSTEP.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKSTEPAttr.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKSTEPBase.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKSTEP209.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKSTL.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKTopAlgo.so
-step-57: /usr/lib/x86_64-linux-gnu/libTKXSBase.so
-step-57: /usr/lib/x86_64-linux-gnu/libp4est.so
-step-57: /usr/lib/x86_64-linux-gnu/libsc.so
-step-57: /usr/lib/x86_64-linux-gnu/libscalapack-openmpi.so
-step-57: /usr/lib/x86_64-linux-gnu/liblapack.so
-step-57: /usr/lib/x86_64-linux-gnu/libblas.so
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libpetsc.so
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libHYPRE.so
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libcmumps.a
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libdmumps.a
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libsmumps.a
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libzmumps.a
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libmumps_common.a
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libpord.a
+step-57: /home/sean/dealii-candi/petsc-3.13.1/lib/libscalapack.a
+step-57: /home/sean/dealii-candi/parmetis-4.0.3/lib/libparmetis.so
+step-57: /home/sean/dealii-candi/parmetis-4.0.3/lib/libmetis.so
 step-57: /usr/lib/x86_64-linux-gnu/openmpi/lib/libmpi_usempif08.so
 step-57: /usr/lib/x86_64-linux-gnu/openmpi/lib/libmpi_usempi_ignore_tkr.so
 step-57: /usr/lib/x86_64-linux-gnu/openmpi/lib/libmpi_mpifh.so
+step-57: /usr/lib/x86_64-linux-gnu/libadolc.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_iostreams.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_serialization.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_system.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_thread.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_regex.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_chrono.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_date_time.so
+step-57: /usr/lib/x86_64-linux-gnu/libboost_atomic.so
+step-57: /usr/lib/x86_64-linux-gnu/libarpack.so
+step-57: /usr/lib/x86_64-linux-gnu/libassimp.so
+step-57: /usr/lib/x86_64-linux-gnu/libgmsh.so
+step-57: /usr/lib/x86_64-linux-gnu/libgsl.so
+step-57: /usr/lib/x86_64-linux-gnu/libgslcblas.so
+step-57: /home/sean/dealii-candi/hdf5-1.10.7/lib/libhdf5.so
+step-57: /usr/lib/x86_64-linux-gnu/libz.so
+step-57: /usr/lib/x86_64-linux-gnu/libmuparser.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKBO.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKBool.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKBRep.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKernel.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKFeat.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKFillet.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKG2d.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKG3d.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKGeomAlgo.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKGeomBase.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKHLR.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKIGES.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKMath.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKMesh.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKOffset.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKPrim.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKShHealing.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKSTEP.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKSTEPAttr.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKSTEPBase.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKSTEP209.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKSTL.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKTopAlgo.so
+step-57: /home/sean/dealii-candi/oce-OCE-0.18.3/lib/libTKXSBase.so
+step-57: /usr/lib/x86_64-linux-gnu/libp4est.so
+step-57: /usr/lib/x86_64-linux-gnu/libsc.so
+step-57: /usr/lib/x86_64-linux-gnu/liblapack.so
+step-57: /usr/lib/x86_64-linux-gnu/libblas.so
 step-57: /usr/lib/x86_64-linux-gnu/openmpi/lib/libmpi.so
-step-57: /usr/lib/x86_64-linux-gnu/libslepc.so
-step-57: /usr/lib/x86_64-linux-gnu/libpetsc.so
 step-57: /usr/lib/x86_64-linux-gnu/libsundials_idas.so
 step-57: /usr/lib/x86_64-linux-gnu/libsundials_arkode.so
 step-57: /usr/lib/x86_64-linux-gnu/libsundials_kinsol.so
 step-57: /usr/lib/x86_64-linux-gnu/libsundials_nvecserial.so
 step-57: /usr/lib/x86_64-linux-gnu/libsundials_nvecparallel.so
 step-57: CMakeFiles/step-57.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable step-57"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable step-57"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/step-57.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -269,6 +275,6 @@ CMakeFiles/step-57.dir/clean:
 .PHONY : CMakeFiles/step-57.dir/clean
 
 CMakeFiles/step-57.dir/depend:
-	cd /home/seanwalkeri95/deal.II/dealii/examples/step-57 && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles/step-57.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/sean/deal.II/dealii/examples/AA-step-57 && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles/step-57.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/step-57.dir/depend
 

@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_SOURCE_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
+CMAKE_BINARY_DIR = /home/sean/deal.II/dealii/examples/AA-step-57
 
 # Utility rule file for distclean.
 
@@ -54,9 +54,9 @@ CMAKE_BINARY_DIR = /home/seanwalkeri95/deal.II/dealii/examples/step-57
 include CMakeFiles/distclean.dir/progress.make
 
 CMakeFiles/distclean:
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --blue --bold --progress-dir=/home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "distclean invoked"
-	/usr/bin/cmake --build /home/seanwalkeri95/deal.II/dealii/examples/step-57 --target clean
-	/usr/bin/cmake --build /home/seanwalkeri95/deal.II/dealii/examples/step-57 --target runclean
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --blue --bold --progress-dir=/home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "distclean invoked"
+	/usr/bin/cmake --build /home/sean/deal.II/dealii/examples/AA-step-57 --target clean
+	/usr/bin/cmake --build /home/sean/deal.II/dealii/examples/AA-step-57 --target runclean
 	/usr/bin/cmake -E remove_directory CMakeFiles
 	/usr/bin/cmake -E remove CMakeCache.txt cmake_install.cmake Makefile build.ninja rules.ninja .ninja_deps .ninja_log
 
@@ -75,6 +75,6 @@ CMakeFiles/distclean.dir/clean:
 .PHONY : CMakeFiles/distclean.dir/clean
 
 CMakeFiles/distclean.dir/depend:
-	cd /home/seanwalkeri95/deal.II/dealii/examples/step-57 && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57 /home/seanwalkeri95/deal.II/dealii/examples/step-57/CMakeFiles/distclean.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/sean/deal.II/dealii/examples/AA-step-57 && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57 /home/sean/deal.II/dealii/examples/AA-step-57/CMakeFiles/distclean.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/distclean.dir/depend
 
