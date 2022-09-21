@@ -267,7 +267,7 @@ namespace Step57
   // <code>gamma</code>.
   template <int dim>
   StationaryNavierStokes<dim>::StationaryNavierStokes(const unsigned int degree)
-    : viscosity(1.0 / 7500.0)
+    : viscosity(1.0 / 40.0)
     , gamma(1.0)
     , degree(degree)
     , triangulation(Triangulation<dim>::maximum_smoothing)
@@ -445,7 +445,7 @@ namespace Step57
                     for (unsigned int j = 0; j < dofs_per_cell; ++j)
                       {
                         // Newton iteration section
-                        /*
+/*
                         local_matrix(i, j) +=
                           (viscosity *
                              scalar_product(grad_phi_u[j], grad_phi_u[i]) +
@@ -456,9 +456,10 @@ namespace Step57
                            gamma * div_phi_u[j] * div_phi_u[i] +
                            phi_p[i] * phi_p[j]) *
                           fe_values.JxW(q);
-                          */
+*/
 
                           // Picard iteration section
+
                           local_matrix(i, j) +=
                             (viscosity *
                                scalar_product(grad_phi_u[j], grad_phi_u[i]) +
@@ -468,13 +469,14 @@ namespace Step57
                              gamma * div_phi_u[j] * div_phi_u[i] +
                              phi_p[i] * phi_p[j]) *
                             fe_values.JxW(q);
+
                       }
                   }
 
                 double present_velocity_divergence =
                   trace(present_velocity_gradients[q]);
                   // Newton iteration section
-                  /*
+/*
                 local_rhs(i) +=
                   (-viscosity * scalar_product(present_velocity_gradients[q],
                                                grad_phi_u[i]) -
@@ -484,9 +486,10 @@ namespace Step57
                    present_velocity_divergence * phi_p[i] -
                    gamma * present_velocity_divergence * div_phi_u[i]) *
                   fe_values.JxW(q);
-                  */
+*/
 
                   // Picard iteration section
+
                   local_rhs(i) +=
                     (-viscosity * scalar_product(present_velocity_gradients[q],
                                                  grad_phi_u[i]) +
@@ -494,6 +497,7 @@ namespace Step57
                      present_velocity_divergence * phi_p[i] -
                      gamma * present_velocity_divergence * div_phi_u[i]) *
                     fe_values.JxW(q);
+
               }
           }
 
@@ -698,6 +702,7 @@ namespace Step57
                 // step-15.
                 for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
                   {
+                    alpha = 1.0;
                     evaluation_point = present_solution;
                     evaluation_point.add(alpha, newton_update);
                     nonzero_constraints.distribute(evaluation_point);
@@ -751,6 +756,7 @@ namespace Step57
         unsigned int line_search_n = 0;
         double       last_res      = 1.0;
         double       current_res   = 1.0;
+        double alpha = 1.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
 
@@ -776,10 +782,10 @@ namespace Step57
               }
             else
               {
-
                 evaluation_point = present_solution;
                 assemble_system(first_step);
                 solve(first_step);
+                double picard_iter = 1;
 
                 // To make sure our solution is getting close to the exact
                 // solution, we let the solution be updated with a weight
@@ -787,20 +793,22 @@ namespace Step57
                 // than the one of last step, which is done in the following
                 // loop. This is the same line search algorithm used in
                 // step-15.
-                //for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
-                //  {
-                double alpha = 1.0;
+                for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
+                  {
+                std::cout << "Picard Iteration: " << picard_iter << std::endl;
                 evaluation_point = present_solution;
                 evaluation_point.add(alpha, newton_update);
                 nonzero_constraints.distribute(evaluation_point);
                 assemble_rhs(first_step);
                 current_res = system_rhs.l2_norm();
-                std::cout << "  alpha: " << std::setw(10) << alpha
-                          << std::setw(0) << "  residual: " << current_res
+                std::cout << "residual: " << current_res
                           << std::endl;
-                //if (current_res < last_res)
-                //  break;
-                //  }
+
+                picard_iter++;
+
+                if (current_res < 1e-12 || picard_iter > 10)
+                  break;
+                  }
                 {
                   present_solution = evaluation_point;
                   std::cout << "  number of line searches: " << line_search_n
@@ -843,13 +851,13 @@ namespace Step57
 
     bool is_initial_step = true;
 
-    for (double Re = 1000.0; Re < target_Re;
+    for (double Re = 20.0; Re < target_Re;
          Re        = std::min(Re + step_size, target_Re))
       {
         viscosity = 1.0 / Re;
         std::cout << "Searching for initial guess with Re = " << Re
                   << std::endl;
-        picard_iteration(1e-12, 50, 0, is_initial_step, false);
+        newton_iteration(1e-12, 50, 0, is_initial_step, false);
         is_initial_step = false;
       }
   }
@@ -925,7 +933,7 @@ namespace Step57
   void StationaryNavierStokes<dim>::run(const unsigned int refinement)
   {
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(3);
+    triangulation.refine_global(4);
 
     const double Re = 1.0 / viscosity;
 
@@ -935,15 +943,15 @@ namespace Step57
     // this program. After that, we just do the same as we did when viscosity
     // is larger than $1/1000$: run Newton's iteration, refine the mesh,
     // transfer solutions, and repeat.
-    if (Re > 1000.0)
+    if (Re > 100.0)
       {
         std::cout << "Searching for initial guess ..." << std::endl;
-        const double step_size = 2000.0;
+        const double step_size = 20.0;
         compute_initial_guess(step_size);
         std::cout << "Found initial guess." << std::endl;
         std::cout << "Computing solution with target Re = " << Re << std::endl;
         viscosity = 1.0 / Re;
-        picard_iteration(1e-12, 50, refinement, false, true);
+        newton_iteration(1e-12, 50, refinement, false, true);
       }
     else
       {
@@ -952,7 +960,7 @@ namespace Step57
         // to search for the initial guess using a continuation
         // method. Newton's iteration can be started directly.
 
-        picard_iteration(1e-12, 50, refinement, true, true);
+        newton_iteration(1e-12, 50, refinement, true, true);
       }
   }
 } // namespace Step57
@@ -964,7 +972,7 @@ int main()
       using namespace Step57;
 
       StationaryNavierStokes<2> flow(/* degree = */ 1);
-      flow.run(4);
+      flow.run(1);
     }
   catch (std::exception &exc)
     {
