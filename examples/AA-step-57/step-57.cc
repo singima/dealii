@@ -138,6 +138,12 @@ namespace Step57
     BlockVector<double> newton_update;
     BlockVector<double> system_rhs;
     BlockVector<double> evaluation_point;
+
+    void Anderson_Acceleration(BlockVector<double> present_solution,
+                               BlockVector<double> evaluation_point,
+                               FullMatrix<double> AA_matrix,
+                               int AA_count,
+                               int AA_limit);
   };
 
   // @sect3{Boundary values and right hand side}
@@ -753,19 +759,26 @@ namespace Step57
     for (unsigned int refinement_n = 0; refinement_n < max_n_refinements + 1;
          ++refinement_n)
       {
-        unsigned int line_search_n = 0;
+        unsigned int picard_iter = 0;
         double       last_res      = 1.0;
         double       current_res   = 1.0;
         double alpha = 1.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
 
+        // This needs to be here for the time being
+        setup_dofs();
+
+        int AA_count = 1;
+        int AA_limit = 2;
+        FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
+
         while ((first_step || (current_res > tolerance)) &&
-               line_search_n < max_n_line_searches)
+               picard_iter < 50)
           {
             if (first_step)
               {
-                setup_dofs();
+                //setup_dofs();
                 initialize_system();
                 evaluation_point = present_solution;
                 assemble_system(first_step);
@@ -785,43 +798,50 @@ namespace Step57
                 evaluation_point = present_solution;
                 assemble_system(first_step);
                 solve(first_step);
-                double picard_iter = 1;
 
-                // To make sure our solution is getting close to the exact
-                // solution, we let the solution be updated with a weight
-                // <code>alpha</code> such that the new residual is smaller
-                // than the one of last step, which is done in the following
-                // loop. This is the same line search algorithm used in
-                // step-15.
-                for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
-                  {
-                std::cout << "Picard Iteration: " << picard_iter << std::endl;
                 evaluation_point = present_solution;
                 evaluation_point.add(alpha, newton_update);
                 nonzero_constraints.distribute(evaluation_point);
                 assemble_rhs(first_step);
                 current_res = system_rhs.l2_norm();
-                std::cout << "residual: " << current_res
-                          << std::endl;
 
-                picard_iter++;
+                Anderson_Acceleration(evaluation_point,
+                                      present_solution,
+                                      AA_matrix,
+                                      AA_count,
+                                      AA_limit);
 
-                if (current_res < 1e-12 || picard_iter > 10)
-                  break;
-                  }
+
+/*
+                  for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
+                    {
+                      alpha = 1.0;
+                      evaluation_point = present_solution;
+                      evaluation_point.add(alpha, newton_update);
+                      nonzero_constraints.distribute(evaluation_point);
+                      assemble_rhs(first_step);
+                      current_res = system_rhs.l2_norm();
+                      std::cout << "  alpha: " << std::setw(10) << alpha
+                                << std::setw(0) << "  residual: " << current_res
+                                << std::endl;
+                      if (current_res < last_res)
+                        break;
+                    }
+                    */
+
                 {
                   present_solution = evaluation_point;
-                  std::cout << "  number of line searches: " << line_search_n
-                            << "  residual: " << current_res << std::endl;
+                  std::cout << "Picard Iteration: " << picard_iter << std::endl;
+                  std::cout << "residual: " << current_res << std::endl;
                   last_res = current_res;
                 }
-                ++line_search_n;
+                ++picard_iter;
               }
 
             if (output_result)
               {
                 output_results(max_n_line_searches * refinement_n +
-                               line_search_n);
+                               picard_iter);
 
                 if (current_res <= tolerance)
                   process_solution(refinement_n);
@@ -833,6 +853,46 @@ namespace Step57
             refine_mesh();
           }
       }
+  }
+
+  template <int dim>
+  void StationaryNavierStokes<dim>::Anderson_Acceleration(
+    BlockVector<double> present_solution,
+    BlockVector<double> evaluation_point,
+    FullMatrix<double> AA_matrix,
+    int AA_count,
+    int AA_limit)
+  {
+    std::cout << present_solution.size() << std::endl;
+
+    if (AA_count < AA_limit)
+    {
+      for (long unsigned int i = 0; i < present_solution.size(); i++)
+      {
+        AA_matrix(i,AA_count) = evaluation_point(i) - present_solution(i);
+        //std::cout << AA_matrix(i,1) << std::endl;
+      }
+      AA_count++;
+    }
+    else
+    {
+      for (int j = 0; j < AA_limit; j++)
+      {
+        for (long unsigned int i = 0; i < present_solution.size(); i++)
+        {
+          if (j < AA_limit - 1)
+          {
+            AA_matrix(i,j) = AA_matrix(i,j+1);
+          }
+          else if (j == AA_limit - 1)
+          {
+            AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
+            std::cout << "Hello" << std::endl;
+          }
+        }
+      }
+    }
+
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
@@ -857,7 +917,8 @@ namespace Step57
         viscosity = 1.0 / Re;
         std::cout << "Searching for initial guess with Re = " << Re
                   << std::endl;
-        newton_iteration(1e-12, 50, 0, is_initial_step, false);
+        //newton_iteration(1e-12, 50, 0, is_initial_step, false);
+        picard_iteration(1e-12, 50, 0, is_initial_step, false);
         is_initial_step = false;
       }
   }
@@ -951,7 +1012,8 @@ namespace Step57
         std::cout << "Found initial guess." << std::endl;
         std::cout << "Computing solution with target Re = " << Re << std::endl;
         viscosity = 1.0 / Re;
-        newton_iteration(1e-12, 50, refinement, false, true);
+        //newton_iteration(1e-12, 50, refinement, false, true);
+        picard_iteration(1e-12, 50, refinement, false, true);
       }
     else
       {
@@ -960,7 +1022,8 @@ namespace Step57
         // to search for the initial guess using a continuation
         // method. Newton's iteration can be started directly.
 
-        newton_iteration(1e-12, 50, refinement, true, true);
+        //newton_iteration(1e-12, 50, refinement, true, true);
+        picard_iteration(1e-12, 50, refinement, true, true);
       }
   }
 } // namespace Step57
