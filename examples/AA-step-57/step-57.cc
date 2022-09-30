@@ -141,8 +141,8 @@ namespace Step57
 
     void Anderson_Acceleration(BlockVector<double> present_solution,
                                BlockVector<double> evaluation_point,
-                               FullMatrix<double> AA_matrix,
-                               int AA_count,
+                               FullMatrix<double> &AA_matrix,
+                               int &AA_count,
                                int AA_limit);
   };
 
@@ -811,6 +811,9 @@ namespace Step57
                                       AA_count,
                                       AA_limit);
 
+                //AA_count++;
+                std::cout << AA_count << std::endl;
+
 
 /*
                   for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
@@ -859,17 +862,18 @@ namespace Step57
   void StationaryNavierStokes<dim>::Anderson_Acceleration(
     BlockVector<double> present_solution,
     BlockVector<double> evaluation_point,
-    FullMatrix<double> AA_matrix,
-    int AA_count,
+    FullMatrix<double> &AA_matrix,
+    int &AA_count,
     int AA_limit)
   {
-    std::cout << present_solution.size() << std::endl;
+    //std::cout << AA_matrix(7,0) << "  "
+    //          << AA_matrix(7,1) << std::endl;
 
     if (AA_count < AA_limit)
     {
       for (long unsigned int i = 0; i < present_solution.size(); i++)
       {
-        AA_matrix(i,AA_count) = evaluation_point(i) - present_solution(i);
+        AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
         //std::cout << AA_matrix(i,1) << std::endl;
       }
       AA_count++;
@@ -886,13 +890,47 @@ namespace Step57
           }
           else if (j == AA_limit - 1)
           {
+            AA_matrix(i,j - 1) = AA_matrix(i,j);
             AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
-            std::cout << "Hello" << std::endl;
+            //std::cout << AA_matrix(i,AA_limit - 1) << std::endl;
           }
         }
       }
+    //  std::cout << AA_matrix(7,0) << "  "
+    //            << AA_matrix(7,1) << std::endl;
     }
 
+    // Now we have the AA_matrix (=F), from here we want to find the Cholesky
+    // decomposition of F^TMF
+
+    // Copy system matrix into FullMatrix format
+    FullMatrix<double> M(dof_handler.n_dofs());
+    M.copy_from(system_matrix);
+
+    for (int i = 0; i < 10; i++)
+    {
+      for (int j = 0; j < 10; j++)
+      {
+        std::cout << system_matrix(i,j) << "  ";
+      }
+      std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    FullMatrix<double> R1(dof_handler.n_dofs());
+    R1.cholesky(M);
+    // M is not symmetric...
+
+    FullMatrix<double> A(AA_limit);
+    A.triple_product(M,AA_matrix,AA_matrix,true,false,1);
+    std::cout << A(0,0) << "  " << A(0,1) << std::endl;
+    std::cout << A(1,0) << "  " << A(1,1) << std::endl;
+
+
+    FullMatrix<double> L(AA_limit);
+    L.cholesky(A);
+    //std::cout << R(0,0) << "  " << R(0,1)
+    //          << R(1,0) << "  " << R(1,1) << std::endl;
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
