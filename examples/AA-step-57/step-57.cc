@@ -132,6 +132,7 @@ namespace Step57
 
     BlockSparsityPattern      sparsity_pattern;
     BlockSparseMatrix<double> system_matrix;
+    BlockSparseMatrix<double> system_stiff_matrix;
     SparseMatrix<double>      pressure_mass_matrix;
 
     BlockVector<double> present_solution;
@@ -289,6 +290,7 @@ namespace Step57
   void StationaryNavierStokes<dim>::setup_dofs()
   {
     system_matrix.clear();
+    system_stiff_matrix.clear();
     pressure_mass_matrix.clear();
 
     // The first step is to associate DoFs with a given mesh.
@@ -357,6 +359,7 @@ namespace Step57
     }
 
     system_matrix.reinit(sparsity_pattern);
+    system_stiff_matrix.reinit(sparsity_pattern);
 
     present_solution.reinit(dofs_per_block);
     newton_update.reinit(dofs_per_block);
@@ -376,7 +379,10 @@ namespace Step57
                                              const bool assemble_matrix)
   {
     if (assemble_matrix)
+    {
       system_matrix = 0;
+      system_stiff_matrix = 0;
+    }
 
     system_rhs = 0;
 
@@ -394,6 +400,7 @@ namespace Step57
     const FEValuesExtractors::Scalar pressure(dim);
 
     FullMatrix<double> local_matrix(dofs_per_cell, dofs_per_cell);
+    FullMatrix<double> local_stiff_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double>     local_rhs(dofs_per_cell);
 
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
@@ -416,6 +423,7 @@ namespace Step57
         fe_values.reinit(cell);
 
         local_matrix = 0;
+        local_stiff_matrix = 0;
         local_rhs    = 0;
 
         fe_values[velocities].get_function_values(evaluation_point,
@@ -476,6 +484,12 @@ namespace Step57
                              phi_p[i] * phi_p[j]) *
                             fe_values.JxW(q);
 
+                          // We need the mass matrix so we calculate it separately
+                          local_stiff_matrix(i, j) +=
+                          (viscosity *
+                             scalar_product(grad_phi_u[j], grad_phi_u[i])) *
+                          fe_values.JxW(q);
+
                       }
                   }
 
@@ -514,11 +528,31 @@ namespace Step57
 
         if (assemble_matrix)
           {
+            for (long unsigned int i = 0; i < local_matrix.m(); i++)
+            {
+              for (long unsigned int j = 0; j < local_matrix.m(); j++)
+              {
+                std::cout << local_matrix(i,j) << "  ";
+              }
+              std::cout << std::endl;
+            }
+            std::cout << std::endl;
+
+            FullMatrix<double> R;
+            R.cholesky(local_stiff_matrix);
+
+
             constraints_used.distribute_local_to_global(local_matrix,
                                                         local_rhs,
                                                         local_dof_indices,
                                                         system_matrix,
                                                         system_rhs);
+
+
+            constraints_used.distribute_local_to_global(local_stiff_matrix,
+                                                        local_dof_indices,
+                                                        system_stiff_matrix);
+
           }
         else
           {
@@ -541,6 +575,7 @@ namespace Step57
         // whole system matrix will have rows that are completely
         // zero. Luckily, FGMRES handles these rows without any problem.
         system_matrix.block(1, 1) = 0;
+        system_stiff_matrix.block(1, 1) = 0;
       }
   }
 
@@ -905,13 +940,13 @@ namespace Step57
 
     // Copy system matrix into FullMatrix format
     FullMatrix<double> M(dof_handler.n_dofs());
-    M.copy_from(system_matrix);
+    M.copy_from(system_stiff_matrix);
 
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < 20; i++)
     {
-      for (int j = 0; j < 10; j++)
+      for (int j = 0; j < 20; j++)
       {
-        std::cout << system_matrix(i,j) << "  ";
+        std::cout << M(i,j) << "  ";
       }
       std::cout << std::endl;
     }
@@ -920,6 +955,7 @@ namespace Step57
     FullMatrix<double> R1(dof_handler.n_dofs());
     R1.cholesky(M);
     // M is not symmetric...
+
 
     FullMatrix<double> A(AA_limit);
     A.triple_product(M,AA_matrix,AA_matrix,true,false,1);
@@ -931,6 +967,7 @@ namespace Step57
     L.cholesky(A);
     //std::cout << R(0,0) << "  " << R(0,1)
     //          << R(1,0) << "  " << R(1,1) << std::endl;
+
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
