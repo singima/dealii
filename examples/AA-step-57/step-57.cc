@@ -528,6 +528,7 @@ namespace Step57
 
         if (assemble_matrix)
           {
+            /*
             for (long unsigned int i = 0; i < local_matrix.m(); i++)
             {
               for (long unsigned int j = 0; j < local_matrix.m(); j++)
@@ -540,7 +541,7 @@ namespace Step57
 
             FullMatrix<double> R;
             R.cholesky(local_stiff_matrix);
-
+*/
 
             constraints_used.distribute_local_to_global(local_matrix,
                                                         local_rhs,
@@ -805,7 +806,7 @@ namespace Step57
         setup_dofs();
 
         int AA_count = 1;
-        int AA_limit = 2;
+        int AA_limit = 4;
         FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
 
         while ((first_step || (current_res > tolerance)) &&
@@ -845,9 +846,6 @@ namespace Step57
                                       AA_matrix,
                                       AA_count,
                                       AA_limit);
-
-                //AA_count++;
-                std::cout << AA_count << std::endl;
 
 
 /*
@@ -901,73 +899,121 @@ namespace Step57
     int &AA_count,
     int AA_limit)
   {
-    //std::cout << AA_matrix(7,0) << "  "
-    //          << AA_matrix(7,1) << std::endl;
-
-    if (AA_count < AA_limit)
+    // This is the loop that handles the storage matrix "AA_matrix"
+    for (int j = 0; j < AA_limit; j++)
     {
       for (long unsigned int i = 0; i < present_solution.size(); i++)
       {
-        AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
-        //std::cout << AA_matrix(i,1) << std::endl;
-      }
-      AA_count++;
-    }
-    else
-    {
-      for (int j = 0; j < AA_limit; j++)
-      {
-        for (long unsigned int i = 0; i < present_solution.size(); i++)
+        if (j < AA_limit - 1)
         {
-          if (j < AA_limit - 1)
-          {
-            AA_matrix(i,j) = AA_matrix(i,j+1);
-          }
-          else if (j == AA_limit - 1)
-          {
-            AA_matrix(i,j - 1) = AA_matrix(i,j);
-            AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
-            //std::cout << AA_matrix(i,AA_limit - 1) << std::endl;
-          }
+          AA_matrix(i,j) = AA_matrix(i,j+1);
+        }
+        else if (j == AA_limit - 1)
+        {
+          AA_matrix(i,j - 1) = AA_matrix(i,j);
+          AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
         }
       }
-    //  std::cout << AA_matrix(7,0) << "  "
-    //            << AA_matrix(7,1) << std::endl;
     }
 
-    // Now we have the AA_matrix (=F), from here we want to find the Cholesky
-    // decomposition of F^TMF
-
-    // Copy system matrix into FullMatrix format
-    FullMatrix<double> M(dof_handler.n_dofs());
-    M.copy_from(system_stiff_matrix);
-
-    for (int i = 0; i < 20; i++)
+    // Here is the matrix that we will need for the actual computations.
+    // Note after the Anderson cycles catch up to the predefined limit, the
+    // matrix F will be identical to AA_matrix.
+    FullMatrix<double> F(dof_handler.n_dofs(),AA_count);
+    if (AA_count < AA_limit)
     {
-      for (int j = 0; j < 20; j++)
+      for (int j = 0; j < AA_count; j++)
       {
-        std::cout << M(i,j) << "  ";
+        for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+        {
+          F(i,j) = AA_matrix(i,AA_limit - AA_count + j);
+        }
+      }
+    }
+    else
+      F = AA_matrix;
+
+    // This commented out bit is just a sanity check to make sure AA_matrix is
+    // being allocated correctly.
+/*
+    std::cout << std::endl;
+    for (int j = 0; j < 10; j++)
+    {
+      for (int i = 0; i < AA_count; i++)
+      {
+        std::cout << F(j,i) << "  ";
       }
       std::cout << std::endl;
     }
     std::cout << std::endl;
+*/
 
-    FullMatrix<double> R1(dof_handler.n_dofs());
-    R1.cholesky(M);
-    // M is not symmetric...
+    // This commented out bit is in case we need to block out the pressure term
+    // but I don't think it's necessary.
+    /*
+    int vel_size = dof_handler.n_dofs() - pressure_mass_matrix.m();
+    FullMatrix<double> temp;
+    FullMatrix<double> M(vel_size);
+    FullMatrix<double> F(vel_size, AA_limit);
 
+    for (int i = 0; i < vel_size; i++)
+    {
+      for (int j = 0; j < vel_size; j++)
+      {
+        M(i,j) = temp(i,j);
+      }
+      for (int k = 0; k < AA_limit; k++)
+      {
+        F(i,k) = AA_matrix(i,k);
+      }
+    }
+    */
 
-    FullMatrix<double> A(AA_limit);
-    A.triple_product(M,AA_matrix,AA_matrix,true,false,1);
-    std::cout << A(0,0) << "  " << A(0,1) << std::endl;
-    std::cout << A(1,0) << "  " << A(1,1) << std::endl;
+    if (AA_count > 1)
+    {
+      // Copy the stiffness matrix
+      FullMatrix<double> M;
+      M.copy_from(system_stiff_matrix);
 
+      // Do the operation A = F'MF
+      FullMatrix<double> A(AA_count);
+      A.triple_product(M,F,F,true,false,1);
 
-    FullMatrix<double> L(AA_limit);
-    L.cholesky(A);
-    //std::cout << R(0,0) << "  " << R(0,1)
-    //          << R(1,0) << "  " << R(1,1) << std::endl;
+      /*
+      std::cout << std::endl;
+      for (int i = 0; i < AA_count; i++)
+      {
+        for (int j = 0; j < AA_count; j++)
+        {
+          std::cout << A(i,j) << "  ";
+        }
+        std::cout << std::endl;
+      }
+      std::cout << std::endl;
+      */
 
+      // Cholesky decomposition of A, L is lower triangular
+      FullMatrix<double> L(AA_limit);
+      L.cholesky(A);
+
+      /*
+      std::cout << std::endl;
+      for (int i = 0; i < AA_count; i++)
+      {
+        for (int j = 0; j < AA_count; j++)
+        {
+          std::cout << L(i,j) << "  ";
+        }
+        std::cout << std::endl;
+      }
+      std::cout << std::endl;
+      */
+
+      // From here we need to do the convex optimization :'(
+    }
+
+    if (AA_count < AA_limit)
+      AA_count++;
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
