@@ -140,11 +140,12 @@ namespace Step57
     BlockVector<double> system_rhs;
     BlockVector<double> evaluation_point;
 
-    void Anderson_Acceleration(BlockVector<double> present_solution,
-                               BlockVector<double> evaluation_point,
+    void Anderson_Acceleration(BlockVector<double> &present_solution,
+                               BlockVector<double> &evaluation_point,
                                FullMatrix<double> &AA_matrix,
+                               FullMatrix<double> &sol_matrix,
                                int &AA_count,
-                               int AA_limit);
+                               int &AA_limit);
   };
 
   // @sect3{Boundary values and right hand side}
@@ -808,6 +809,8 @@ namespace Step57
         int AA_count = 1;
         int AA_limit = 4;
         FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
+        FullMatrix<double> sol_matrix(AA_matrix);
+        Vector<double> farts(dof_handler.n_dofs());
 
         while ((first_step || (current_res > tolerance)) &&
                picard_iter < 50)
@@ -839,13 +842,24 @@ namespace Step57
                 evaluation_point.add(alpha, newton_update);
                 nonzero_constraints.distribute(evaluation_point);
                 assemble_rhs(first_step);
-                current_res = system_rhs.l2_norm();
+                //current_res = system_rhs.l2_norm();
+
+                farts = evaluation_point;
 
                 Anderson_Acceleration(evaluation_point,
                                       present_solution,
                                       AA_matrix,
+                                      sol_matrix,
                                       AA_count,
                                       AA_limit);
+
+                for (int i = 0; i < dof_handler.n_dofs(); i++)
+                {
+                  std::cout << evaluation_point(i) - farts(i) << std::endl;
+                }
+
+                //assemble_rhs(first_step);
+                current_res = system_rhs.l2_norm();
 
 
 /*
@@ -893,11 +907,12 @@ namespace Step57
 
   template <int dim>
   void StationaryNavierStokes<dim>::Anderson_Acceleration(
-    BlockVector<double> present_solution,
-    BlockVector<double> evaluation_point,
+    BlockVector<double> &present_solution,
+    BlockVector<double> &evaluation_point,
     FullMatrix<double> &AA_matrix,
+    FullMatrix<double> &sol_matrix,
     int &AA_count,
-    int AA_limit)
+    int &AA_limit)
   {
     // This is the loop that handles the storage matrix "AA_matrix"
     for (int j = 0; j < AA_limit; j++)
@@ -907,11 +922,14 @@ namespace Step57
         if (j < AA_limit - 1)
         {
           AA_matrix(i,j) = AA_matrix(i,j+1);
+          sol_matrix(i,j) = sol_matrix(i,j+1);
         }
         else if (j == AA_limit - 1)
         {
           AA_matrix(i,j - 1) = AA_matrix(i,j);
+          sol_matrix(i,j - 1) = sol_matrix(i,j);
           AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
+          sol_matrix(i,AA_limit - 1) = evaluation_point(i);
         }
       }
     }
@@ -920,6 +938,7 @@ namespace Step57
     // Note after the Anderson cycles catch up to the predefined limit, the
     // matrix F will be identical to AA_matrix.
     FullMatrix<double> F(dof_handler.n_dofs(),AA_count);
+    FullMatrix<double> u_tilde(dof_handler.n_dofs(),AA_count);
     if (AA_count < AA_limit)
     {
       for (int j = 0; j < AA_count; j++)
@@ -927,11 +946,15 @@ namespace Step57
         for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
           F(i,j) = AA_matrix(i,AA_limit - AA_count + j);
+          u_tilde(i,j) = sol_matrix(i,AA_limit - AA_count + j);
         }
       }
     }
     else
+    {
       F = AA_matrix;
+      u_tilde = sol_matrix;
+    }
 
     // This commented out bit is just a sanity check to make sure AA_matrix is
     // being allocated correctly.
@@ -941,7 +964,7 @@ namespace Step57
     {
       for (int i = 0; i < AA_count; i++)
       {
-        std::cout << F(j,i) << "  ";
+        std::cout << u_tilde(j,i) << "  ";
       }
       std::cout << std::endl;
     }
@@ -1058,6 +1081,23 @@ namespace Step57
         std::cout << std::endl;
       }
       std::cout << std::endl;
+
+      Vector<double> alpha(AA_count);
+
+      for (int i = 0; i < AA_count; i++)
+      {
+        alpha(i) = L_mT(i,AA_count);
+      }
+
+      evaluation_point = 0;
+      for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+      {
+        for (int j = 0; j < AA_count; j++)
+        {
+          evaluation_point(i) += alpha(j) * u_tilde(i,j);
+        }
+        //std::cout << evaluation_point(i) << std::endl;
+      }
 
       // From here we need to do the convex optimization :'(
     }
