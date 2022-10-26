@@ -808,9 +808,10 @@ namespace Step57
         setup_dofs();
 
         int AA_count = 1;
-        int AA_limit = 4;
+        int AA_limit = 2;
         FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
         FullMatrix<double> sol_matrix(AA_matrix);
+        FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),AA_limit);
         Vector<double> AA_sol(dof_handler.n_dofs());
 
         while ((first_step || (current_res > tolerance)) &&
@@ -845,6 +846,8 @@ namespace Step57
                 assemble_rhs(first_step);
                 //current_res = system_rhs.l2_norm();
 
+                // Here I believe we have \tilde{u}_{k+1}
+
                 Anderson_Acceleration(AA_sol,evaluation_point,
                                       present_solution,
                                       AA_matrix,
@@ -852,12 +855,14 @@ namespace Step57
                                       AA_count,
                                       AA_limit);
 
+                /*
                 for (int i = 0; i < dof_handler.n_dofs(); i++)
                 {
                   std::cout << evaluation_point(i) - AA_sol(i) << std::endl;
                 }
+                */
 
-                if (AA_count > 2)
+                if (AA_count > 1)
                 {
                   evaluation_point = AA_sol;
                 }
@@ -867,24 +872,6 @@ namespace Step57
                 current_res = system_rhs.l2_norm();
 
 
-
-/*
-                  for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
-                    {
-                      alpha = 1.0;
-                      evaluation_point = present_solution;
-                      evaluation_point.add(alpha, newton_update);
-                      nonzero_constraints.distribute(evaluation_point);
-                      assemble_rhs(first_step);
-                      current_res = system_rhs.l2_norm();
-                      std::cout << "  alpha: " << std::setw(10) << alpha
-                                << std::setw(0) << "  residual: " << current_res
-                                << std::endl;
-                      if (current_res < last_res)
-                        break;
-                    }
-                    */
-
                 {
                   present_solution = evaluation_point;
                   std::cout << "Picard Iteration: " << picard_iter << std::endl;
@@ -892,6 +879,9 @@ namespace Step57
                   last_res = current_res;
                 }
                 ++picard_iter;
+
+                if (AA_count < AA_limit)
+                  AA_count++;
               }
 
             if (output_result)
@@ -941,6 +931,16 @@ namespace Step57
       }
     }
 
+    for (long unsigned int i = 0; i < 10; i++)
+    {
+      for (int j = 0; j < AA_limit; j++)
+      {
+        std::cout << AA_matrix(i,j) << "  ";
+      }
+      std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
     // Here is the matrix that we will need for the actual computations.
     // Note after the Anderson cycles catch up to the predefined limit, the
     // matrix F will be identical to AA_matrix.
@@ -963,41 +963,6 @@ namespace Step57
       u_tilde = sol_matrix;
     }
 
-    // This commented out bit is just a sanity check to make sure AA_matrix is
-    // being allocated correctly.
-/*
-    std::cout << std::endl;
-    for (int j = 0; j < 10; j++)
-    {
-      for (int i = 0; i < AA_count; i++)
-      {
-        std::cout << u_tilde(j,i) << "  ";
-      }
-      std::cout << std::endl;
-    }
-    std::cout << std::endl;
-*/
-
-    // This commented out bit is in case we need to block out the pressure term
-    // but I don't think it's necessary.
-    /*
-    int vel_size = dof_handler.n_dofs() - pressure_mass_matrix.m();
-    FullMatrix<double> temp;
-    FullMatrix<double> M(vel_size);
-    FullMatrix<double> F(vel_size, AA_limit);
-
-    for (int i = 0; i < vel_size; i++)
-    {
-      for (int j = 0; j < vel_size; j++)
-      {
-        M(i,j) = temp(i,j);
-      }
-      for (int k = 0; k < AA_limit; k++)
-      {
-        F(i,k) = AA_matrix(i,k);
-      }
-    }
-    */
 
     if (AA_count > 1)
     {
@@ -1106,9 +1071,6 @@ namespace Step57
       }
 
     }
-
-    if (AA_count < AA_limit)
-      AA_count++;
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
