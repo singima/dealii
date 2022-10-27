@@ -847,7 +847,6 @@ namespace Step57
                 //current_res = system_rhs.l2_norm();
 
                 // Here I believe we have \tilde{u}_{k+1}
-
                 Anderson_Acceleration(AA_sol,evaluation_point,
                                       present_solution,
                                       AA_matrix,
@@ -856,11 +855,12 @@ namespace Step57
                                       AA_limit);
 
                 /*
-                for (int i = 0; i < dof_handler.n_dofs(); i++)
+                for (int i = 0; i < 15; i++)
                 {
                   std::cout << evaluation_point(i) - AA_sol(i) << std::endl;
                 }
                 */
+
 
                 if (AA_count > 1)
                 {
@@ -930,7 +930,7 @@ namespace Step57
         }
       }
     }
-
+/*
     for (long unsigned int i = 0; i < 10; i++)
     {
       for (int j = 0; j < AA_limit; j++)
@@ -940,6 +940,7 @@ namespace Step57
       std::cout << std::endl;
     }
     std::cout << std::endl;
+    */
 
     // Here is the matrix that we will need for the actual computations.
     // Note after the Anderson cycles catch up to the predefined limit, the
@@ -1007,7 +1008,7 @@ namespace Step57
 
       // Need to make another matrix for the minimization step along with the
       // right hand side vector, but that's easy
-      FullMatrix<long double> L1(AA_count + 1,AA_count);
+      FullMatrix<double> L1(AA_count + 1,AA_count);
       Vector<double> AA_rhs(AA_count + 1);
       AA_rhs = 0;
       AA_rhs(AA_count) = 1;
@@ -1033,22 +1034,23 @@ namespace Step57
 
       // Here we need to do the least squares for the solve
       // x = (A^T * A)^{-1} * A^T * b
-      FullMatrix<long double> L_leftinv(AA_count,AA_count);
-      FullMatrix<long double> L_sym(AA_count);
-      FullMatrix<long double> L_mT(AA_count,AA_count + 1);
-      //FullMatrix<long double> L1_long(AA_count + 1,AA_count);
+      FullMatrix<double> L_syminv(AA_count,AA_count);
+      FullMatrix<double> L_sym(AA_count);
+      FullMatrix<double> L_leftinv(AA_count,AA_count + 1);
 
       //L_leftinv.left_invert(L1);
-      L1.Tmmult(L_leftinv,L1);
-      L_sym.invert(L_leftinv);
-      L_sym.mTmult(L_mT,L1);
+      L1.Tmmult(L_sym,L1);
+      L_syminv.invert(L_sym);
+      L_syminv.mTmult(L_leftinv,L1);
+
+
 
       std::cout << std::endl;
       for (int i = 0; i < AA_count; i++)
       {
         for (int j = 0; j < AA_count + 1; j++)
         {
-          std::cout << L_mT(i,j) << "  ";
+          std::cout << L_leftinv(i,j) << "  ";
         }
         std::cout << std::endl;
       }
@@ -1058,15 +1060,18 @@ namespace Step57
 
       for (int i = 0; i < AA_count; i++)
       {
-        alpha(i) = L_mT(i,AA_count);
+        alpha(i) = L_leftinv(i,AA_count);
       }
 
       for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
       {
+        AA_sol(i) = alpha(0) * u_tilde(i,0) + alpha(1) * u_tilde(i,1);
+        /*
         for (int j = 0; j < AA_count; j++)
         {
           AA_sol(i) += alpha(j) * u_tilde(i,j);
         }
+        */
         //std::cout << new_eval_point(i) - evaluation_point(i) << std::endl;
       }
 
