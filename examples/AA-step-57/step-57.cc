@@ -800,7 +800,7 @@ namespace Step57
         unsigned int picard_iter = 0;
         double       last_res      = 1.0;
         double       current_res   = 1.0;
-        double alpha = 1.0;
+        double alpha = 0.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
 
@@ -844,15 +844,18 @@ namespace Step57
                 evaluation_point.add(alpha, newton_update);
                 nonzero_constraints.distribute(evaluation_point);
                 assemble_rhs(first_step);
+
                 //current_res = system_rhs.l2_norm();
 
                 // Here I believe we have \tilde{u}_{k+1}
+
                 Anderson_Acceleration(AA_sol,evaluation_point,
                                       present_solution,
                                       AA_matrix,
                                       sol_matrix,
                                       AA_count,
                                       AA_limit);
+
 
                 /*
                 for (int i = 0; i < 15; i++)
@@ -918,13 +921,13 @@ namespace Step57
       {
         if (j < AA_limit - 1)
         {
-          AA_matrix(i,j) = AA_matrix(i,j+1);
-          sol_matrix(i,j) = sol_matrix(i,j+1);
+          AA_matrix(i,j) = AA_matrix(i,j + 1);
+          sol_matrix(i,j) = sol_matrix(i,j + 1);
         }
         else if (j == AA_limit - 1)
         {
-          AA_matrix(i,j - 1) = AA_matrix(i,j);
-          sol_matrix(i,j - 1) = sol_matrix(i,j);
+          //AA_matrix(i,j - 1) = AA_matrix(i,j);
+          //sol_matrix(i,j - 1) = sol_matrix(i,j);
           AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
           sol_matrix(i,AA_limit - 1) = evaluation_point(i);
         }
@@ -1034,7 +1037,7 @@ namespace Step57
 
       // Here we need to do the least squares for the solve
       // x = (A^T * A)^{-1} * A^T * b
-      FullMatrix<double> L_syminv(AA_count,AA_count);
+      FullMatrix<double> L_syminv(AA_count);
       FullMatrix<double> L_sym(AA_count);
       FullMatrix<double> L_leftinv(AA_count,AA_count + 1);
 
