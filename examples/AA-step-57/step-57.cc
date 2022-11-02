@@ -626,6 +626,7 @@ namespace Step57
       pressure_mass_matrix,
       pmass_preconditioner);
 
+    // Solves system_matrix * newton_update = system_rhs...
     gmres.solve(system_matrix, newton_update, system_rhs, preconditioner);
     std::cout << "FGMRES steps: " << solver_control.last_step() << std::endl;
 
@@ -800,7 +801,7 @@ namespace Step57
         unsigned int picard_iter = 0;
         double       last_res      = 1.0;
         double       current_res   = 1.0;
-        double alpha = 0.0;
+        double alpha = 1.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
 
@@ -836,16 +837,24 @@ namespace Step57
               }
             else
               {
+                // Set evaluation_point equal to the previous solution, it's
+                // what is evaluated during the actual FEM.
                 evaluation_point = present_solution;
+
+                // Obvious: assembles the linear system
                 assemble_system(first_step);
                 solve(first_step);
 
-                evaluation_point = present_solution;
+                // the solve was done for newton_updates...
+                // Sets evaluation_point = newton_update * alpha (I think)
                 evaluation_point.add(alpha, newton_update);
+
+                // Standard affine constraint distribution, don't touch
                 nonzero_constraints.distribute(evaluation_point);
+
+                // Similar to the other assembly... but with the rhs.
                 assemble_rhs(first_step);
 
-                //current_res = system_rhs.l2_norm();
 
                 // Here I believe we have \tilde{u}_{k+1}
 
@@ -855,15 +864,6 @@ namespace Step57
                                       sol_matrix,
                                       AA_count,
                                       AA_limit);
-
-
-                /*
-                for (int i = 0; i < 15; i++)
-                {
-                  std::cout << evaluation_point(i) - AA_sol(i) << std::endl;
-                }
-                */
-
 
                 if (AA_count > 1)
                 {
@@ -977,6 +977,9 @@ namespace Step57
       // Do the operation A = F'MF
       FullMatrix<double> A(AA_count);
       A.triple_product(M,F,F,true,false,1);
+
+      // This does the above calc except M=I, which is L^2 norm
+      //F.Tmmult(A,F,false);
 
       /*
       std::cout << std::endl;
