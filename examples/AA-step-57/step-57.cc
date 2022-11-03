@@ -511,7 +511,6 @@ namespace Step57
 */
 
                   // Picard iteration section
-
                   local_rhs(i) +=
                     (-viscosity * scalar_product(present_velocity_gradients[q],
                                                  grad_phi_u[i]) +
@@ -519,7 +518,6 @@ namespace Step57
                      present_velocity_divergence * phi_p[i] -
                      gamma * present_velocity_divergence * div_phi_u[i]) *
                     fe_values.JxW(q);
-
               }
           }
 
@@ -627,6 +625,7 @@ namespace Step57
       pmass_preconditioner);
 
     // Solves system_matrix * newton_update = system_rhs...
+    // WE CAN'T INCLUDE THE INITIAL VELOCITY
     gmres.solve(system_matrix, newton_update, system_rhs, preconditioner);
     std::cout << "FGMRES steps: " << solver_control.last_step() << std::endl;
 
@@ -837,6 +836,8 @@ namespace Step57
               }
             else
               {
+                // NEED TO CHECK THINGS EARLIER
+
                 // Set evaluation_point equal to the previous solution, it's
                 // what is evaluated during the actual FEM.
                 evaluation_point = present_solution;
@@ -848,6 +849,7 @@ namespace Step57
                 // the solve was done for newton_updates...
                 // Sets evaluation_point = newton_update * alpha (I think)
                 evaluation_point.add(alpha, newton_update);
+                //evaluation_point = newton_update;
 
                 // Standard affine constraint distribution, don't touch
                 nonzero_constraints.distribute(evaluation_point);
@@ -857,17 +859,24 @@ namespace Step57
 
 
                 // Here I believe we have \tilde{u}_{k+1}
-
-                Anderson_Acceleration(AA_sol,evaluation_point,
-                                      present_solution,
-                                      AA_matrix,
-                                      sol_matrix,
-                                      AA_count,
-                                      AA_limit);
-
-                if (AA_count > 1)
+                // Need to have this after the second picard iteration because
+                // we're not supposed to look back at
+                if (picard_iter > 0)
                 {
-                  evaluation_point = AA_sol;
+                  Anderson_Acceleration(AA_sol,evaluation_point,
+                                        present_solution,
+                                        AA_matrix,
+                                        sol_matrix,
+                                        AA_count,
+                                        AA_limit);
+
+                  if (AA_count > 1)
+                  {
+                    evaluation_point = AA_sol;
+                  }
+
+                  if (AA_count < AA_limit)
+                    AA_count++;
                 }
 
 
@@ -882,9 +891,6 @@ namespace Step57
                   last_res = current_res;
                 }
                 ++picard_iter;
-
-                if (AA_count < AA_limit)
-                  AA_count++;
               }
 
             if (output_result)
@@ -1045,6 +1051,7 @@ namespace Step57
       FullMatrix<double> L_leftinv(AA_count,AA_count + 1);
 
       //L_leftinv.left_invert(L1);
+      // Also consider householder for solving the least squares
       L1.Tmmult(L_sym,L1);
       L_syminv.invert(L_sym);
       L_syminv.mTmult(L_leftinv,L1);
