@@ -939,17 +939,6 @@ namespace Step57
         }
       }
     }
-/*
-    for (long unsigned int i = 0; i < 10; i++)
-    {
-      for (int j = 0; j < AA_limit; j++)
-      {
-        std::cout << AA_matrix(i,j) << "  ";
-      }
-      std::cout << std::endl;
-    }
-    std::cout << std::endl;
-    */
 
     // Here is the matrix that we will need for the actual computations.
     // Note after the Anderson cycles catch up to the predefined limit, the
