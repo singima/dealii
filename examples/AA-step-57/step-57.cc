@@ -479,7 +479,7 @@ namespace Step57
                           local_matrix(i, j) +=
                             (viscosity *
                                scalar_product(grad_phi_u[j], grad_phi_u[i]) +
-                             grad_phi_u[j] * present_velocity_values[q] *
+                             phi_u[j] * present_velocity_gradients[q] *
                                phi_u[i] -
                              div_phi_u[i] * phi_p[j] - phi_p[i] * div_phi_u[j] +
                              gamma * div_phi_u[j] * div_phi_u[i] +
@@ -513,7 +513,9 @@ namespace Step57
                   // Picard iteration section
                   local_rhs(i) +=
                     (-viscosity * scalar_product(present_velocity_gradients[q],
-                                                 grad_phi_u[i]) +
+                                                 grad_phi_u[i]) -
+                     present_velocity_gradients[q] * present_velocity_values[q] *
+                       phi_u[i] +
                      present_pressure_values[q] * div_phi_u[i] +
                      present_velocity_divergence * phi_p[i] -
                      gamma * present_velocity_divergence * div_phi_u[i]) *
@@ -528,21 +530,6 @@ namespace Step57
 
         if (assemble_matrix)
           {
-            /*
-            for (long unsigned int i = 0; i < local_matrix.m(); i++)
-            {
-              for (long unsigned int j = 0; j < local_matrix.m(); j++)
-              {
-                std::cout << local_matrix(i,j) << "  ";
-              }
-              std::cout << std::endl;
-            }
-            std::cout << std::endl;
-
-            FullMatrix<double> R;
-            R.cholesky(local_stiff_matrix);
-*/
-
             constraints_used.distribute_local_to_global(local_matrix,
                                                         local_rhs,
                                                         local_dof_indices,
@@ -861,8 +848,9 @@ namespace Step57
                 // Here I believe we have \tilde{u}_{k+1}
                 // Need to have this after the second picard iteration because
                 // we're not supposed to look back at
-                if (picard_iter > 0)
-                {
+
+                //if (picard_iter > 0)
+                //{
                   Anderson_Acceleration(AA_sol,evaluation_point,
                                         present_solution,
                                         AA_matrix,
@@ -877,7 +865,8 @@ namespace Step57
 
                   if (AA_count < AA_limit)
                     AA_count++;
-                }
+                //}
+
 
 
                 //assemble_rhs(first_step);
