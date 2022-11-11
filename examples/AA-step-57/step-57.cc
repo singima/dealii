@@ -795,7 +795,7 @@ namespace Step57
         setup_dofs();
 
         int AA_count = 1;
-        int AA_limit = 2;
+        int AA_limit = 4;
         FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
         FullMatrix<double> sol_matrix(AA_matrix);
         FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),AA_limit);
@@ -849,8 +849,8 @@ namespace Step57
                 // Need to have this after the second picard iteration because
                 // we're not supposed to look back at
 
-                //if (picard_iter > 0)
-                //{
+                if (picard_iter > 0)
+                {
                   Anderson_Acceleration(AA_sol,evaluation_point,
                                         present_solution,
                                         AA_matrix,
@@ -858,14 +858,15 @@ namespace Step57
                                         AA_count,
                                         AA_limit);
 
+/*
                   if (AA_count > 1)
                   {
                     evaluation_point = AA_sol;
                   }
-
+*/
                   if (AA_count < AA_limit)
                     AA_count++;
-                //}
+                }
 
 
 
@@ -909,29 +910,33 @@ namespace Step57
     int &AA_count,
     int &AA_limit)
   {
-    // This is the loop that handles the storage matrix "AA_matrix"
+    // This loop creates the matrix that stores all the solution data from
+    // previous iterations.
+    // AA_matrix stores the u_tilde - u vectors
+    // sol_matrix stores just the u_tilde vector
+    //
+    // Note: These matrices aren't used in actual computations because their
+    // size is a problem in the beginning of AA
     for (int j = 0; j < AA_limit; j++)
     {
       for (long unsigned int i = 0; i < present_solution.size(); i++)
       {
         if (j < AA_limit - 1)
         {
-          AA_matrix(i,j) = AA_matrix(i,j + 1);
-          sol_matrix(i,j) = sol_matrix(i,j + 1);
+          AA_matrix(i,AA_limit - 1 - j) = AA_matrix(i,AA_limit - 2 - j);
+          sol_matrix(i,AA_limit - 1 - j) = sol_matrix(i,AA_limit - 2 - j);
         }
         else if (j == AA_limit - 1)
         {
           //AA_matrix(i,j - 1) = AA_matrix(i,j);
           //sol_matrix(i,j - 1) = sol_matrix(i,j);
-          AA_matrix(i,AA_limit - 1) = evaluation_point(i) - present_solution(i);
-          sol_matrix(i,AA_limit - 1) = evaluation_point(i);
+          AA_matrix(i,0) = evaluation_point(i) - present_solution(i);
+          sol_matrix(i,0) = evaluation_point(i);
         }
       }
-    }
+    } // Tested and works as it should
 
-    // Here is the matrix that we will need for the actual computations.
-    // Note after the Anderson cycles catch up to the predefined limit, the
-    // matrix F will be identical to AA_matrix.
+    // Here we create two matrices that will be for the actual AA computation
     FullMatrix<double> F(dof_handler.n_dofs(),AA_count);
     FullMatrix<double> u_tilde(dof_handler.n_dofs(),AA_count);
     if (AA_count < AA_limit)
@@ -940,8 +945,8 @@ namespace Step57
       {
         for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
-          F(i,j) = AA_matrix(i,AA_limit - AA_count + j);
-          u_tilde(i,j) = sol_matrix(i,AA_limit - AA_count + j);
+          F(i,j) = AA_matrix(i,j);
+          u_tilde(i,j) = sol_matrix(i,j);
         }
       }
     }
@@ -949,8 +954,21 @@ namespace Step57
     {
       F = AA_matrix;
       u_tilde = sol_matrix;
-    }
+    } // Tested
 
+    // Here we start the actual Anderson Acceleration process
+    //
+    //
+    // For the Anderson minimization step, We want to minimize ||F\alpha||_X.
+    // This can be rewritten
+    // ||F\alpha||_X^2 = \alpha^T * F^T * M * F * \alpha
+    // where M is the stiffness matrix.
+    // We further consider QR = M^{1/2} * F, which gives
+    // ||F\alpha||_X^2 = ||R\alpha||_2^2, easy prolem, just need Cholesky
+    //
+    // Additionally we need to make sure that this part only happens if AA_count
+    // is greater than 1 so we still save the first solution and have a
+    // nonsingular matrix for the linear solve.
 
     if (AA_count > 1)
     {
@@ -958,33 +976,17 @@ namespace Step57
       FullMatrix<double> M;
       M.copy_from(system_stiff_matrix);
 
-      // Do the operation A = F'MF
-      FullMatrix<double> A(AA_count);
-      A.triple_product(M,F,F,true,false,1);
+      // Here we calculate F'MF
+      FullMatrix<double> triple(AA_count);
+      triple.triple_product(M,F,F,true,false,1); // tested
 
       // This does the above calc except M=I, which is L^2 norm
       //F.Tmmult(A,F,false);
 
-      /*
-      std::cout << std::endl;
-      for (int i = 0; i < AA_count; i++)
-      {
-        for (int j = 0; j < AA_count; j++)
-        {
-          std::cout << A(i,j) << "  ";
-        }
-        std::cout << std::endl;
-      }
-      std::cout << std::endl;
-      */
-
-      // Cholesky decomposition of A, L is lower triangular
+      // Cholesky decomposition step, L is lower triangular
       FullMatrix<double> L(AA_count);
-      L.cholesky(A);
-
-      // Output the matrix
-      /*
-      std::cout << std::endl;
+      L.cholesky(triple); // tested
+/*
       for (int i = 0; i < AA_count; i++)
       {
         for (int j = 0; j < AA_count; j++)
@@ -994,7 +996,17 @@ namespace Step57
         std::cout << std::endl;
       }
       std::cout << std::endl;
-      */
+*/
+
+    }
+
+
+    /*
+
+      // Cholesky decomposition of A, L is lower triangular
+      FullMatrix<double> L(AA_count);
+      L.cholesky(A);
+
 
       // Need to make another matrix for the minimization step along with the
       // right hand side vector, but that's easy
@@ -1057,16 +1069,10 @@ namespace Step57
       for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
       {
         AA_sol(i) = alpha(0) * u_tilde(i,0) + alpha(1) * u_tilde(i,1);
-        /*
-        for (int j = 0; j < AA_count; j++)
-        {
-          AA_sol(i) += alpha(j) * u_tilde(i,j);
-        }
-        */
-        //std::cout << new_eval_point(i) - evaluation_point(i) << std::endl;
       }
 
     }
+    */
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
