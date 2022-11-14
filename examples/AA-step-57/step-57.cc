@@ -795,7 +795,7 @@ namespace Step57
         setup_dofs();
 
         int AA_count = 1;
-        int AA_limit = 4;
+        int AA_limit = 2;
         FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
         FullMatrix<double> sol_matrix(AA_matrix);
         FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),AA_limit);
@@ -834,15 +834,11 @@ namespace Step57
                 solve(first_step);
 
                 // the solve was done for newton_updates...
-                // Sets evaluation_point = newton_update * alpha (I think)
+                // Does evaluation_point += newton_update * alpha
                 evaluation_point.add(alpha, newton_update);
                 //evaluation_point = newton_update;
 
-                // Standard affine constraint distribution, don't touch
-                nonzero_constraints.distribute(evaluation_point);
 
-                // Similar to the other assembly... but with the rhs.
-                assemble_rhs(first_step);
 
 
                 // Here I believe we have \tilde{u}_{k+1}
@@ -858,17 +854,21 @@ namespace Step57
                                         AA_count,
                                         AA_limit);
 
-/*
+
                   if (AA_count > 1)
                   {
                     evaluation_point = AA_sol;
                   }
-*/
+
                   if (AA_count < AA_limit)
                     AA_count++;
                 }
 
+                // Standard affine constraint distribution, don't touch
+                nonzero_constraints.distribute(evaluation_point);
 
+                // Similar to the other assembly... but with the rhs.
+                assemble_rhs(first_step);
 
                 //assemble_rhs(first_step);
                 current_res = system_rhs.l2_norm();
@@ -979,6 +979,7 @@ namespace Step57
       // Here we calculate F'MF
       FullMatrix<double> triple(AA_count);
       triple.triple_product(M,F,F,true,false,1); // tested
+      //F.Tmmult(triple,F,false); // L^2 norm
 
       // This does the above calc except M=I, which is L^2 norm
       //F.Tmmult(A,F,false);
@@ -986,93 +987,77 @@ namespace Step57
       // Cholesky decomposition step, L is lower triangular
       FullMatrix<double> L(AA_count);
       L.cholesky(triple); // tested
-/*
-      for (int i = 0; i < AA_count; i++)
-      {
-        for (int j = 0; j < AA_count; j++)
-        {
-          std::cout << L(i,j) << "  ";
-        }
-        std::cout << std::endl;
-      }
-      std::cout << std::endl;
-*/
 
-    }
-
-
-    /*
-
-      // Cholesky decomposition of A, L is lower triangular
-      FullMatrix<double> L(AA_count);
-      L.cholesky(A);
-
-
-      // Need to make another matrix for the minimization step along with the
-      // right hand side vector, but that's easy
-      FullMatrix<double> L1(AA_count + 1,AA_count);
-      Vector<double> AA_rhs(AA_count + 1);
-      AA_rhs = 0;
-      AA_rhs(AA_count) = 1;
-
-      std::cout << std::endl;
+      // Now we must set up the linear system, since we need a convex
+      // combination, we must add a row of 1's to L
+      FullMatrix<double> L_adj(AA_count + 1, AA_count); // tested
       for (int i = 0; i < AA_count + 1; i++)
       {
         for (int j = 0; j < AA_count; j++)
         {
-          if (i < AA_count)
+          if (i == AA_count)
           {
-            L1(i,j) = L(i,j);
+            L_adj(i,j) = 1;
           }
           else
           {
-            L1(i,j) = 1;
+            L_adj(i,j) = L(i,j);
           }
-          std::cout << L1(i,j) << "  ";
         }
-        std::cout << std::endl;
       }
-      std::cout << std::endl;
 
-      // Here we need to do the least squares for the solve
-      // x = (A^T * A)^{-1} * A^T * b
-      FullMatrix<double> L_syminv(AA_count);
+
+      // This is the rhs of the optimization phase
+      Vector<double> L_rhs(AA_count + 1);
+      L_rhs(AA_count) = 1; // tested
+
+      // Now we must do the least squares method, i.e.,
+      // x = (A'A)^{-1}A'b
       FullMatrix<double> L_sym(AA_count);
-      FullMatrix<double> L_leftinv(AA_count,AA_count + 1);
-
-      //L_leftinv.left_invert(L1);
-      // Also consider householder for solving the least squares
-      L1.Tmmult(L_sym,L1);
-      L_syminv.invert(L_sym);
-      L_syminv.mTmult(L_leftinv,L1);
-
-
-
-      std::cout << std::endl;
-      for (int i = 0; i < AA_count; i++)
-      {
-        for (int j = 0; j < AA_count + 1; j++)
-        {
-          std::cout << L_leftinv(i,j) << "  ";
-        }
-        std::cout << std::endl;
-      }
-      std::cout << std::endl;
-
+      FullMatrix<double> L_syminv(AA_count);
+      FullMatrix<double> LSq_mat(AA_count, AA_count + 1);
       Vector<double> alpha(AA_count);
 
+      L_adj.Tmmult(L_sym,L_adj,false); // L^T * L
+      L_syminv.invert(L_sym); // (L^T * L)^{-1}
+      // I wonder if there's an issue here because sometimes the sum of alpha
+      // does not equal 1
+      L_syminv.mTmult(LSq_mat,L_adj,false); // (L^T * L)^{-1} * L^T
+      LSq_mat.vmult(alpha,L_rhs,false); // gets alpha, tested
+
+      double sum = 0;
       for (int i = 0; i < AA_count; i++)
       {
-        alpha(i) = L_leftinv(i,AA_count);
+        std::cout << alpha(i) << std::endl;
+        sum += alpha(i);
+      }
+      std::cout << std::endl;
+      std::cout << "sum of alphas = " << sum << std::endl;
+
+      {
+        if (sum == 1)
+        {
+          std::cout << "Sum of alpha = 1, optimization works!!!" << std::endl;
+        }
+        else
+        {
+          std::cout << "WARNING: Sum of alphas is not 1!!!" << std::endl;
+        }
+        std::cout << std::endl;
       }
 
+      // Here we calculate the updated solution, which we set equal to AA_sol
+      AA_sol = 0;
       for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
       {
-        AA_sol(i) = alpha(0) * u_tilde(i,0) + alpha(1) * u_tilde(i,1);
+        for (int j = 0; j < AA_count; j++)
+        {
+          AA_sol(i) += alpha(j) * u_tilde(i,j);
+        }
       }
 
     }
-    */
+
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
