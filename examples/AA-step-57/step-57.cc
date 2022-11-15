@@ -787,17 +787,16 @@ namespace Step57
         unsigned int picard_iter = 0;
         double       last_res      = 1.0;
         double       current_res   = 1.0;
+        int AA_count = 1;
+        int AA_limit = 4;
         double alpha = 1.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
 
         // This needs to be here for the time being
         setup_dofs();
-
-        int AA_count = 1;
-        int AA_limit = 2;
         FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
-        FullMatrix<double> sol_matrix(AA_matrix);
+        FullMatrix<double> sol_matrix(dof_handler.n_dofs(),AA_limit);
         FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),AA_limit);
         Vector<double> AA_sol(dof_handler.n_dofs());
 
@@ -806,7 +805,7 @@ namespace Step57
           {
             if (first_step)
               {
-                //setup_dofs();
+                setup_dofs();
                 initialize_system();
                 evaluation_point = present_solution;
                 assemble_system(first_step);
@@ -838,7 +837,11 @@ namespace Step57
                 evaluation_point.add(alpha, newton_update);
                 //evaluation_point = newton_update;
 
+                // Standard affine constraint distribution, don't touch
+                nonzero_constraints.distribute(evaluation_point);
 
+                // Similar to the other assembly... but with the rhs.
+                assemble_rhs(first_step);
 
 
                 // Here I believe we have \tilde{u}_{k+1}
@@ -864,11 +867,13 @@ namespace Step57
                     AA_count++;
                 }
 
+
                 // Standard affine constraint distribution, don't touch
                 nonzero_constraints.distribute(evaluation_point);
 
                 // Similar to the other assembly... but with the rhs.
                 assemble_rhs(first_step);
+
 
                 //assemble_rhs(first_step);
                 current_res = system_rhs.l2_norm();
@@ -923,13 +928,13 @@ namespace Step57
       {
         if (j < AA_limit - 1)
         {
+          // This moves each \tilde{u}_{k+1} - u_k over one
           AA_matrix(i,AA_limit - 1 - j) = AA_matrix(i,AA_limit - 2 - j);
           sol_matrix(i,AA_limit - 1 - j) = sol_matrix(i,AA_limit - 2 - j);
         }
         else if (j == AA_limit - 1)
         {
-          //AA_matrix(i,j - 1) = AA_matrix(i,j);
-          //sol_matrix(i,j - 1) = sol_matrix(i,j);
+          // Put new computed value into first column of matrix
           AA_matrix(i,0) = evaluation_point(i) - present_solution(i);
           sol_matrix(i,0) = evaluation_point(i);
         }
