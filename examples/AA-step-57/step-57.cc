@@ -788,7 +788,7 @@ namespace Step57
         double       last_res      = 1.0;
         double       current_res   = 1.0;
         int AA_count = 1;
-        int AA_limit = 4;
+        int AA_limit = 2;
         double alpha = 1.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
@@ -868,13 +868,6 @@ namespace Step57
                 }
 
 
-                // Standard affine constraint distribution, don't touch
-                nonzero_constraints.distribute(evaluation_point);
-
-                // Similar to the other assembly... but with the rhs.
-                assemble_rhs(first_step);
-
-
                 //assemble_rhs(first_step);
                 current_res = system_rhs.l2_norm();
 
@@ -935,7 +928,8 @@ namespace Step57
         else if (j == AA_limit - 1)
         {
           // Put new computed value into first column of matrix
-          AA_matrix(i,0) = evaluation_point(i) - present_solution(i);
+          //AA_matrix(i,0) = evaluation_point(i) - present_solution(i);
+          AA_matrix(i,0) = newton_update(i);
           sol_matrix(i,0) = evaluation_point(i);
         }
       }
@@ -981,6 +975,8 @@ namespace Step57
       FullMatrix<double> M;
       M.copy_from(system_stiff_matrix);
 
+      // Redoing some things
+/*
       // Here we calculate F'MF
       FullMatrix<double> triple(AA_count);
       triple.triple_product(M,F,F,true,false,1); // tested
@@ -1029,6 +1025,29 @@ namespace Step57
       // does not equal 1
       L_syminv.mTmult(LSq_mat,L_adj,false); // (L^T * L)^{-1} * L^T
       LSq_mat.vmult(alpha,L_rhs,false); // gets alpha, tested
+*/
+
+      // Here we do things for a simple m=1 case
+      // for m=1, we can just set
+      // alpha = -(w_{k+1} - w_k, w_k)_X / ||w_{k+1}-w_k||_X^2
+      Vector<double> res_diff(dof_handler.n_dofs());
+      Vector<double> res_prev(dof_handler.n_dofs());
+
+      for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+      {
+        res_diff(i) = F(i,0) - F(i,1);
+        res_prev(i) = F(i,1);
+      }
+
+      double numerator;
+      double denominator;
+      numerator = M.matrix_scalar_product(res_diff,res_prev);
+      denominator = M.matrix_norm_square(res_diff);
+      Vector<double> alpha(AA_count);
+      alpha(0) = -numerator / denominator;
+      alpha(1) = 1 - alpha(0);
+
+
 
       double sum = 0;
       for (int i = 0; i < AA_count; i++)
@@ -1060,7 +1079,6 @@ namespace Step57
           AA_sol(i) += alpha(j) * u_tilde(i,j);
         }
       }
-
     }
 
   }
