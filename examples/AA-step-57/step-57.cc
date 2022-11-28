@@ -141,7 +141,6 @@ namespace Step57
     BlockVector<double> evaluation_point;
 
     void Anderson_Acceleration(Vector<double> &AA_sol,
-                               BlockVector<double> &present_solution,
                                BlockVector<double> &evaluation_point,
                                FullMatrix<double> &AA_matrix,
                                FullMatrix<double> &sol_matrix,
@@ -788,7 +787,7 @@ namespace Step57
         double       last_res      = 1.0;
         double       current_res   = 1.0;
         int AA_count = 1;
-        int AA_limit = 2;
+        int AA_limit = 3;
         double alpha = 1.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
@@ -850,18 +849,11 @@ namespace Step57
 
                 if (picard_iter > 0)
                 {
-                  Anderson_Acceleration(AA_sol,evaluation_point,
-                                        present_solution,
-                                        AA_matrix,
-                                        sol_matrix,
-                                        AA_count,
-                                        AA_limit);
-
+                  Anderson_Acceleration(AA_sol,evaluation_point,AA_matrix,
+                                        sol_matrix,AA_count,AA_limit);
 
                   if (AA_count > 1)
-                  {
                     evaluation_point = AA_sol;
-                  }
 
                   if (AA_count < AA_limit)
                     AA_count++;
@@ -901,7 +893,6 @@ namespace Step57
   template <int dim>
   void StationaryNavierStokes<dim>::Anderson_Acceleration(
     Vector<double> &AA_sol,
-    BlockVector<double> &present_solution,
     BlockVector<double> &evaluation_point,
     FullMatrix<double> &AA_matrix,
     FullMatrix<double> &sol_matrix,
@@ -917,7 +908,7 @@ namespace Step57
     // size is a problem in the beginning of AA
     for (int j = 0; j < AA_limit; j++)
     {
-      for (long unsigned int i = 0; i < present_solution.size(); i++)
+      for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
       {
         if (j < AA_limit - 1)
         {
@@ -963,7 +954,7 @@ namespace Step57
     // ||F\alpha||_X^2 = \alpha^T * F^T * M * F * \alpha
     // where M is the stiffness matrix.
     // We further consider QR = M^{1/2} * F, which gives
-    // ||F\alpha||_X^2 = ||R\alpha||_2^2, easy prolem, just need Cholesky
+    // ||F\alpha||_X^2 = ||R\alpha||_2^2, easy problem, just need Cholesky
     //
     // Additionally we need to make sure that this part only happens if AA_count
     // is greater than 1 so we still save the first solution and have a
@@ -975,100 +966,90 @@ namespace Step57
       FullMatrix<double> M;
       M.copy_from(system_stiff_matrix);
 
-      // Redoing some things
-/*
-      // Here we calculate F'MF
-      FullMatrix<double> triple(AA_count);
-      triple.triple_product(M,F,F,true,false,1); // tested
-      //F.Tmmult(triple,F,false); // L^2 norm
+      Vector<double> alpha(AA_count);
 
-      // This does the above calc except M=I, which is L^2 norm
-      //F.Tmmult(A,F,false);
-
-      // Cholesky decomposition step, L is lower triangular
-      FullMatrix<double> L(AA_count);
-      L.cholesky(triple); // tested
-
-      // Now we must set up the linear system, since we need a convex
-      // combination, we must add a row of 1's to L
-      FullMatrix<double> L_adj(AA_count + 1, AA_count); // tested
-      for (int i = 0; i < AA_count + 1; i++)
+      if (AA_count == 2)
       {
-        for (int j = 0; j < AA_count; j++)
+        // Here we do things for a simple m=1 case
+        // for m=1, we can just set
+        // alpha = -(w_{k+1} - w_k, w_k)_X / ||w_{k+1}-w_k||_X^2
+        Vector<double> res_diff(dof_handler.n_dofs());
+        Vector<double> res_prev(dof_handler.n_dofs());
+
+        for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
-          if (i == AA_count)
+          res_diff(i) = F(i,0) - F(i,1);
+          res_prev(i) = F(i,1);
+        }
+
+        double numerator;
+        double denominator;
+        numerator = M.matrix_scalar_product(res_diff,res_prev);
+        denominator = M.matrix_norm_square(res_diff);
+        alpha(0) = -numerator / denominator;
+        alpha(1) = 1 - alpha(0);
+      }
+      else
+      {
+        // We use this method for m>1
+        // Here is the slick method using Fhat
+        // Need to verify that when m=1 that this still checks out
+        int m = AA_count - 1;
+        Vector<double> F_rhs(dof_handler.n_dofs());
+        FullMatrix<double> Fhat(dof_handler.n_dofs(),m);
+
+        for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+        {
+          F_rhs(i) = -newton_update(i);
+          for (int j = 0; j < m; j++)
           {
-            L_adj(i,j) = 1;
-          }
-          else
-          {
-            L_adj(i,j) = L(i,j);
+            // Because the mth term is the first column in F, we skip that one
+            Fhat(i,j) = F(i,j + 1) - newton_update(i);
           }
         }
+
+        // This follows the crackhead-like work that I did on the table.
+        // Essentially we calculate this quantity:
+        // alpha_hat = inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
+
+        // Here we calculate Fhat' * M * Fhat
+        FullMatrix<double> trip_prod(m);
+        trip_prod.triple_product(M,Fhat,Fhat,true,false);
+
+        // inv(Fhat' * M * Fhat)
+        FullMatrix<double> trip_inv(m);
+        trip_inv.invert(trip_prod);
+
+        // Calculate M * F_rhs
+        Vector<double> y1(dof_handler.n_dofs());
+        M.vmult(y1,F_rhs);
+
+        // Calculate Fhat' * y
+        Vector<double> y2(m);
+        Fhat.Tvmult(y2,y1);
+
+        // Calculate alpha_hat = inv(Fhat' * M * Fhat) * y2
+        Vector<double> alpha_hat(m);
+        trip_inv.vmult(alpha_hat,y2);
+
+
+        // Evaluate the implicitly imposed condition on alpha.
+        double sum = 0;
+        for (int i = 0; i < m; i++)
+        {
+          alpha(i) = alpha_hat(i);
+          sum += alpha_hat(i);
+        }
+        alpha(m) = 1 - sum;
+
+
       }
 
-
-      // This is the rhs of the optimization phase
-      Vector<double> L_rhs(AA_count + 1);
-      L_rhs(AA_count) = 1; // tested
-
-      // Now we must do the least squares method, i.e.,
-      // x = (A'A)^{-1}A'b
-      FullMatrix<double> L_sym(AA_count);
-      FullMatrix<double> L_syminv(AA_count);
-      FullMatrix<double> LSq_mat(AA_count, AA_count + 1);
-      Vector<double> alpha(AA_count);
-
-      L_adj.Tmmult(L_sym,L_adj,false); // L^T * L
-      L_syminv.invert(L_sym); // (L^T * L)^{-1}
-      // I wonder if there's an issue here because sometimes the sum of alpha
-      // does not equal 1
-      L_syminv.mTmult(LSq_mat,L_adj,false); // (L^T * L)^{-1} * L^T
-      LSq_mat.vmult(alpha,L_rhs,false); // gets alpha, tested
-*/
-
-      // Here we do things for a simple m=1 case
-      // for m=1, we can just set
-      // alpha = -(w_{k+1} - w_k, w_k)_X / ||w_{k+1}-w_k||_X^2
-      Vector<double> res_diff(dof_handler.n_dofs());
-      Vector<double> res_prev(dof_handler.n_dofs());
-
-      for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
-      {
-        res_diff(i) = F(i,0) - F(i,1);
-        res_prev(i) = F(i,1);
-      }
-
-      double numerator;
-      double denominator;
-      numerator = M.matrix_scalar_product(res_diff,res_prev);
-      denominator = M.matrix_norm_square(res_diff);
-      Vector<double> alpha(AA_count);
-      alpha(0) = -numerator / denominator;
-      alpha(1) = 1 - alpha(0);
-
-
-
-      double sum = 0;
       for (int i = 0; i < AA_count; i++)
       {
         std::cout << alpha(i) << std::endl;
-        sum += alpha(i);
       }
-      std::cout << std::endl;
-      std::cout << "sum of alphas = " << sum << std::endl;
 
-      {
-        if (sum == 1)
-        {
-          std::cout << "Sum of alpha = 1, optimization works!!!" << std::endl;
-        }
-        else
-        {
-          std::cout << "WARNING: Sum of alphas is not 1!!!" << std::endl;
-        }
-        std::cout << std::endl;
-      }
 
       // Here we calculate the updated solution, which we set equal to AA_sol
       AA_sol = 0;
