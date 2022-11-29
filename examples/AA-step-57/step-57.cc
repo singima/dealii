@@ -140,12 +140,10 @@ namespace Step57
     BlockVector<double> system_rhs;
     BlockVector<double> evaluation_point;
 
-    void Anderson_Acceleration(Vector<double> &AA_sol,
-                               BlockVector<double> &evaluation_point,
-                               FullMatrix<double> &AA_matrix,
-                               FullMatrix<double> &sol_matrix,
-                               int &AA_count,
-                               int &AA_limit);
+    void Anderson_Acceleration(FullMatrix<double> &AA_matrix,
+                               FullMatrix<double> &utilde_matrix,
+                               int &AA_iter,
+                               const int &m);
   };
 
   // @sect3{Boundary values and right hand side}
@@ -783,21 +781,18 @@ namespace Step57
     for (unsigned int refinement_n = 0; refinement_n < max_n_refinements + 1;
          ++refinement_n)
       {
+        // Number of times we look back in the Anderson Acceleration
+        const int m = 2;
+        int AA_iter = 1;
         unsigned int picard_iter = 0;
-        double       last_res      = 1.0;
         double       current_res   = 1.0;
-        int AA_count = 1;
-        int AA_limit = 3;
-        double alpha = 1.0;
         std::cout << "grid refinements: " << refinement_n << std::endl
                   << "viscosity: " << viscosity << std::endl;
 
         // This needs to be here for the time being
         setup_dofs();
-        FullMatrix<double> AA_matrix(dof_handler.n_dofs(),AA_limit);
-        FullMatrix<double> sol_matrix(dof_handler.n_dofs(),AA_limit);
-        FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),AA_limit);
-        Vector<double> AA_sol(dof_handler.n_dofs());
+        FullMatrix<double> AA_matrix(dof_handler.n_dofs(),m + 1);
+        FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),m + 1);
 
         while ((first_step || (current_res > tolerance)) &&
                picard_iter < 50)
@@ -817,12 +812,9 @@ namespace Step57
                 current_res = system_rhs.l2_norm();
                 std::cout << "The residual of initial guess is " << current_res
                           << std::endl;
-                last_res = current_res;
               }
             else
               {
-                // NEED TO CHECK THINGS EARLIER
-
                 // Set evaluation_point equal to the previous solution, it's
                 // what is evaluated during the actual FEM.
                 evaluation_point = present_solution;
@@ -833,7 +825,7 @@ namespace Step57
 
                 // the solve was done for newton_updates...
                 // Does evaluation_point += newton_update * alpha
-                evaluation_point.add(alpha, newton_update);
+                evaluation_point.add(1.0, newton_update);
                 //evaluation_point = newton_update;
 
                 // Standard affine constraint distribution, don't touch
@@ -849,26 +841,19 @@ namespace Step57
 
                 if (picard_iter > 0)
                 {
-                  Anderson_Acceleration(AA_sol,evaluation_point,AA_matrix,
-                                        sol_matrix,AA_count,AA_limit);
+                  Anderson_Acceleration(AA_matrix,utilde_matrix,AA_iter,m);
 
-                  if (AA_count > 1)
-                    evaluation_point = AA_sol;
-
-                  if (AA_count < AA_limit)
-                    AA_count++;
+                  if (AA_iter < m + 1)
+                    AA_iter++;
                 }
-
 
                 //assemble_rhs(first_step);
                 current_res = system_rhs.l2_norm();
-
 
                 {
                   present_solution = evaluation_point;
                   std::cout << "Picard Iteration: " << picard_iter << std::endl;
                   std::cout << "residual: " << current_res << std::endl;
-                  last_res = current_res;
                 }
                 ++picard_iter;
               }
@@ -892,58 +877,55 @@ namespace Step57
 
   template <int dim>
   void StationaryNavierStokes<dim>::Anderson_Acceleration(
-    Vector<double> &AA_sol,
-    BlockVector<double> &evaluation_point,
     FullMatrix<double> &AA_matrix,
-    FullMatrix<double> &sol_matrix,
-    int &AA_count,
-    int &AA_limit)
+    FullMatrix<double> &utilde_matrix,
+    int &AA_iter,
+    const int &m)
   {
     // This loop creates the matrix that stores all the solution data from
     // previous iterations.
     // AA_matrix stores the u_tilde - u vectors
-    // sol_matrix stores just the u_tilde vector
+    // utilde_matrix stores just the u_tilde vector
     //
     // Note: These matrices aren't used in actual computations because their
     // size is a problem in the beginning of AA
-    for (int j = 0; j < AA_limit; j++)
+    for (int j = 0; j < m + 1; j++)
     {
-      for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+      if (j < m)
       {
-        if (j < AA_limit - 1)
-        {
-          // This moves each \tilde{u}_{k+1} - u_k over one
-          AA_matrix(i,AA_limit - 1 - j) = AA_matrix(i,AA_limit - 2 - j);
-          sol_matrix(i,AA_limit - 1 - j) = sol_matrix(i,AA_limit - 2 - j);
-        }
-        else if (j == AA_limit - 1)
+        // New stuff that's hopefully faster than loops
+        AA_matrix.swap_col(m - j,m - 1 - j);
+        utilde_matrix.swap_col(m - j,m - 1 - j);
+      }
+      else if (j == m)
+      {
+        for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
           // Put new computed value into first column of matrix
-          //AA_matrix(i,0) = evaluation_point(i) - present_solution(i);
           AA_matrix(i,0) = newton_update(i);
-          sol_matrix(i,0) = evaluation_point(i);
+          utilde_matrix(i,0) = evaluation_point(i);
         }
       }
     } // Tested and works as it should
 
     // Here we create two matrices that will be for the actual AA computation
-    FullMatrix<double> F(dof_handler.n_dofs(),AA_count);
-    FullMatrix<double> u_tilde(dof_handler.n_dofs(),AA_count);
-    if (AA_count < AA_limit)
+    FullMatrix<double> F(dof_handler.n_dofs(),AA_iter);
+    FullMatrix<double> u_tilde(dof_handler.n_dofs(),AA_iter);
+    if (AA_iter < m + 1)
     {
-      for (int j = 0; j < AA_count; j++)
+      for (int j = 0; j < AA_iter; j++)
       {
         for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
           F(i,j) = AA_matrix(i,j);
-          u_tilde(i,j) = sol_matrix(i,j);
+          u_tilde(i,j) = utilde_matrix(i,j);
         }
       }
     }
     else
     {
       F = AA_matrix;
-      u_tilde = sol_matrix;
+      u_tilde = utilde_matrix;
     } // Tested
 
     // Here we start the actual Anderson Acceleration process
@@ -956,19 +938,19 @@ namespace Step57
     // We further consider QR = M^{1/2} * F, which gives
     // ||F\alpha||_X^2 = ||R\alpha||_2^2, easy problem, just need Cholesky
     //
-    // Additionally we need to make sure that this part only happens if AA_count
+    // Additionally we need to make sure that this part only happens if AA_iter
     // is greater than 1 so we still save the first solution and have a
     // nonsingular matrix for the linear solve.
 
-    if (AA_count > 1)
+    if (AA_iter > 1)
     {
       // Copy the stiffness matrix
       FullMatrix<double> M;
       M.copy_from(system_stiff_matrix);
 
-      Vector<double> alpha(AA_count);
+      Vector<double> alpha(AA_iter);
 
-      if (AA_count == 2)
+      if (AA_iter == 2)
       {
         // Here we do things for a simple m=1 case
         // for m=1, we can just set
@@ -994,23 +976,33 @@ namespace Step57
         // We use this method for m>1
         // Here is the slick method using Fhat
         // Need to verify that when m=1 that this still checks out
-        int m = AA_count - 1;
-        Vector<double> F_rhs(dof_handler.n_dofs());
+        //
+        // We need to hardcode the alpha summing to 1 into the system itself,
+        // so what we do is rearrange the system using the fact that
+        // \alpha_m = 1 - alpha_1 - ... alpha_m-1.
+        // This gives us the system:
+        // Fhat * alpha_hat = -F_rhs, where
+        // Fhat = [F_1 - F_m, F_2 = F_m, ..., F_m-1 - F_m]
+        // alpha_hat = [alpha_1, ..., alpha_m-1]
+        // F_rhs = -F_m
+
+        int m = AA_iter - 1;
+        Vector<double> F_m(dof_handler.n_dofs());
         FullMatrix<double> Fhat(dof_handler.n_dofs(),m);
 
         for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
-          F_rhs(i) = -newton_update(i);
+          F_m(i) = F(i,m);
           for (int j = 0; j < m; j++)
           {
             // Because the mth term is the first column in F, we skip that one
-            Fhat(i,j) = F(i,j + 1) - newton_update(i);
+            Fhat(i,j) = F(i,j) - F(i,m);
           }
         }
 
         // This follows the crackhead-like work that I did on the table.
         // Essentially we calculate this quantity:
-        // alpha_hat = inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
+        // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
 
         // Here we calculate Fhat' * M * Fhat
         FullMatrix<double> trip_prod(m);
@@ -1022,7 +1014,7 @@ namespace Step57
 
         // Calculate M * F_rhs
         Vector<double> y1(dof_handler.n_dofs());
-        M.vmult(y1,F_rhs);
+        M.vmult(y1,F_m);
 
         // Calculate Fhat' * y
         Vector<double> y2(m);
@@ -1037,31 +1029,29 @@ namespace Step57
         double sum = 0;
         for (int i = 0; i < m; i++)
         {
-          alpha(i) = alpha_hat(i);
-          sum += alpha_hat(i);
+          alpha(i) = -alpha_hat(i);
+          sum += alpha(i);
         }
         alpha(m) = 1 - sum;
-
-
       }
 
-      for (int i = 0; i < AA_count; i++)
+      for (int i = 0; i < AA_iter; i++)
       {
         std::cout << alpha(i) << std::endl;
       }
 
 
       // Here we calculate the updated solution, which we set equal to AA_sol
-      AA_sol = 0;
+      Vector<double> AA_sol(dof_handler.n_dofs());
       for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
       {
-        for (int j = 0; j < AA_count; j++)
+        for (int j = 0; j < AA_iter; j++)
         {
           AA_sol(i) += alpha(j) * u_tilde(i,j);
         }
       }
+      evaluation_point = AA_sol;
     }
-
   }
 
   // @sect4{StationaryNavierStokes::compute_initial_guess}
@@ -1204,7 +1194,7 @@ int main()
       using namespace Step57;
 
       StationaryNavierStokes<2> flow(/* degree = */ 1);
-      flow.run(1);
+      flow.run(4);
     }
   catch (std::exception &exc)
     {
