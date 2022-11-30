@@ -60,6 +60,9 @@
 // And the one for ILU preconditioner:
 #include <deal.II/lac/sparse_ilu.h>
 
+// Timing
+#include <chrono>
+using namespace std::chrono;
 
 #include <fstream>
 #include <iostream>
@@ -83,7 +86,7 @@ namespace Step57
   {
   public:
     StationaryNavierStokes(const unsigned int degree);
-    void run(const unsigned int refinement);
+    void run(const int m, unsigned int &picard_iter, double Re);
 
   private:
     void setup_dofs();
@@ -111,10 +114,10 @@ namespace Step57
                           const bool         output_result);
 
     void picard_iteration(const double       tolerance,
-                          const unsigned int max_n_line_searches,
-                          const unsigned int max_n_refinements,
                           const bool         is_initial_step,
-                          const bool         output_result);
+                          const bool         output_result,
+                          const int          m,
+                          unsigned int       &picard_iter);
 
     void compute_initial_guess(double step_size);
 
@@ -273,7 +276,7 @@ namespace Step57
   // <code>gamma</code>.
   template <int dim>
   StationaryNavierStokes<dim>::StationaryNavierStokes(const unsigned int degree)
-    : viscosity(1.0 / 40.0)
+    : viscosity(1.0 / 1.0)
     , gamma(1.0)
     , degree(degree)
     , triangulation(Triangulation<dim>::maximum_smoothing)
@@ -494,8 +497,6 @@ namespace Step57
 
                 double present_velocity_divergence =
                   trace(present_velocity_gradients[q]);
-                  // Newton iteration section
-/*
                 local_rhs(i) +=
                   (-viscosity * scalar_product(present_velocity_gradients[q],
                                                grad_phi_u[i]) -
@@ -505,18 +506,6 @@ namespace Step57
                    present_velocity_divergence * phi_p[i] -
                    gamma * present_velocity_divergence * div_phi_u[i]) *
                   fe_values.JxW(q);
-*/
-
-                  // Picard iteration section
-                  local_rhs(i) +=
-                    (-viscosity * scalar_product(present_velocity_gradients[q],
-                                                 grad_phi_u[i]) -
-                     present_velocity_gradients[q] * present_velocity_values[q] *
-                       phi_u[i] +
-                     present_pressure_values[q] * div_phi_u[i] +
-                     present_velocity_divergence * phi_p[i] -
-                     gamma * present_velocity_divergence * div_phi_u[i]) *
-                    fe_values.JxW(q);
               }
           }
 
@@ -537,8 +526,7 @@ namespace Step57
             constraints_used.distribute_local_to_global(local_stiff_matrix,
                                                         local_dof_indices,
                                                         system_stiff_matrix);
-
-          }
+                                                                  }
         else
           {
             constraints_used.distribute_local_to_global(local_rhs,
@@ -730,7 +718,6 @@ namespace Step57
                 // step-15.
                 for (double alpha = 1.0; alpha > 1e-5; alpha *= 0.5)
                   {
-                    alpha = 1.0;
                     evaluation_point = present_solution;
                     evaluation_point.add(alpha, newton_update);
                     nonzero_constraints.distribute(evaluation_point);
@@ -771,108 +758,109 @@ namespace Step57
   template <int dim>
   void StationaryNavierStokes<dim>::picard_iteration(
     const double       tolerance,
-    const unsigned int max_n_line_searches,
-    const unsigned int max_n_refinements,
     const bool         is_initial_step,
-    const bool         output_result)
+    const bool         output_result,
+    const int          m,
+    unsigned int       &picard_iter)
   {
     bool first_step = is_initial_step;
 
-    for (unsigned int refinement_n = 0; refinement_n < max_n_refinements + 1;
-         ++refinement_n)
+    // Number of times we look back in the Anderson Acceleration
+    int AA_iter = 1;
+    //unsigned int picard_iter = 0;
+    double       current_res   = 1.0;
+    std::cout << "viscosity: " << viscosity << std::endl;
+
+    // This needs to be here for the time being
+    setup_dofs();
+    FullMatrix<double> AA_matrix(dof_handler.n_dofs(),m + 1);
+    FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),m + 1);
+
+    while ((first_step || (current_res > tolerance)) &&
+           picard_iter < 12)
+    {
+      if (first_step)
       {
-        // Number of times we look back in the Anderson Acceleration
-        const int m = 2;
-        int AA_iter = 1;
-        unsigned int picard_iter = 0;
-        double       current_res   = 1.0;
-        std::cout << "grid refinements: " << refinement_n << std::endl
-                  << "viscosity: " << viscosity << std::endl;
-
-        // This needs to be here for the time being
         setup_dofs();
-        FullMatrix<double> AA_matrix(dof_handler.n_dofs(),m + 1);
-        FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),m + 1);
-
-        while ((first_step || (current_res > tolerance)) &&
-               picard_iter < 50)
-          {
-            if (first_step)
-              {
-                setup_dofs();
-                initialize_system();
-                evaluation_point = present_solution;
-                assemble_system(first_step);
-                solve(first_step);
-                present_solution = newton_update;
-                nonzero_constraints.distribute(present_solution);
-                first_step       = false;
-                evaluation_point = present_solution;
-                assemble_rhs(first_step);
-                current_res = system_rhs.l2_norm();
-                std::cout << "The residual of initial guess is " << current_res
-                          << std::endl;
-              }
-            else
-              {
-                // Set evaluation_point equal to the previous solution, it's
-                // what is evaluated during the actual FEM.
-                evaluation_point = present_solution;
-
-                // Obvious: assembles the linear system
-                assemble_system(first_step);
-                solve(first_step);
-
-                // the solve was done for newton_updates...
-                // Does evaluation_point += newton_update * alpha
-                evaluation_point.add(1.0, newton_update);
-                //evaluation_point = newton_update;
-
-                // Standard affine constraint distribution, don't touch
-                nonzero_constraints.distribute(evaluation_point);
-
-                // Similar to the other assembly... but with the rhs.
-                assemble_rhs(first_step);
-
-
-                // Here I believe we have \tilde{u}_{k+1}
-                // Need to have this after the second picard iteration because
-                // we're not supposed to look back at
-
-                if (picard_iter > 0)
-                {
-                  Anderson_Acceleration(AA_matrix,utilde_matrix,AA_iter,m);
-
-                  if (AA_iter < m + 1)
-                    AA_iter++;
-                }
-
-                //assemble_rhs(first_step);
-                current_res = system_rhs.l2_norm();
-
-                {
-                  present_solution = evaluation_point;
-                  std::cout << "Picard Iteration: " << picard_iter << std::endl;
-                  std::cout << "residual: " << current_res << std::endl;
-                }
-                ++picard_iter;
-              }
-
-            if (output_result)
-              {
-                output_results(max_n_line_searches * refinement_n +
-                               picard_iter);
-
-                if (current_res <= tolerance)
-                  process_solution(refinement_n);
-              }
-          }
-
-        if (refinement_n < max_n_refinements)
-          {
-            refine_mesh();
-          }
+        initialize_system();
+        evaluation_point = present_solution;
+        assemble_system(first_step);
+        solve(first_step);
+        present_solution = newton_update;
+        nonzero_constraints.distribute(present_solution);
+        first_step       = false;
+        evaluation_point = present_solution;
+        assemble_rhs(first_step);
+        current_res = system_rhs.l2_norm();
+        std::cout << "The residual of initial guess is " << current_res
+                  << std::endl;
       }
+      else
+      {
+        std::cout << "**************************" << std::endl;
+        std::cout << "Picard Iteration: " << picard_iter << std::endl;
+        // Set evaluation_point equal to the previous solution, it's
+        // what is evaluated during the actual FEM.
+        evaluation_point = present_solution;
+
+        // Obvious: assembles the linear system
+        assemble_system(first_step);
+        solve(first_step);
+
+        // the solve was done for newton_updates...
+        // Does evaluation_point += newton_update * alpha
+        evaluation_point.add(1.0, newton_update);
+        //evaluation_point = newton_update;
+
+        // Standard affine constraint distribution, don't touch
+        nonzero_constraints.distribute(evaluation_point);
+
+        // Similar to the other assembly... but with the rhs.
+        assemble_rhs(first_step);
+
+
+        // Here I believe we have \tilde{u}_{k+1}
+        // Need to have this after the second picard iteration because
+        // we're not supposed to look back at
+
+        if (picard_iter > 0 && m != 0)
+        {
+          Anderson_Acceleration(AA_matrix,utilde_matrix,AA_iter,m);
+
+          if (AA_iter < m + 1)
+            AA_iter++;
+        }
+
+        //assemble_rhs(first_step);
+        current_res = system_rhs.l2_norm();
+
+        {
+          present_solution = evaluation_point;
+          std::cout << "residual: " << current_res << std::endl;
+          std::cout << "**************************" << std::endl;
+          std::cout << std::endl;
+        }
+
+        ++picard_iter;
+
+        if (current_res > 1.0)
+        {
+          picard_iter = 1000;
+          break;
+        }
+      }
+
+      if (output_result)
+      {
+        output_results(picard_iter);
+
+        if (current_res <= tolerance)
+        {
+          unsigned int refinement_n = 0;
+          process_solution(refinement_n);
+        }
+      }
+    }
   }
 
   template <int dim>
@@ -889,6 +877,8 @@ namespace Step57
     //
     // Note: These matrices aren't used in actual computations because their
     // size is a problem in the beginning of AA
+    std::cout << "Anderson step: " << AA_iter - 1 << std::endl;
+    std::cout << "Anderson limit: " << m << std::endl;
     for (int j = 0; j < m + 1; j++)
     {
       if (j < m)
@@ -926,22 +916,13 @@ namespace Step57
     {
       F = AA_matrix;
       u_tilde = utilde_matrix;
-    } // Tested
+    }
 
     // Here we start the actual Anderson Acceleration process
     //
-    //
-    // For the Anderson minimization step, We want to minimize ||F\alpha||_X.
-    // This can be rewritten
-    // ||F\alpha||_X^2 = \alpha^T * F^T * M * F * \alpha
-    // where M is the stiffness matrix.
-    // We further consider QR = M^{1/2} * F, which gives
-    // ||F\alpha||_X^2 = ||R\alpha||_2^2, easy problem, just need Cholesky
-    //
-    // Additionally we need to make sure that this part only happens if AA_iter
-    // is greater than 1 so we still save the first solution and have a
-    // nonsingular matrix for the linear solve.
-
+    // We split this into two sections. If AA_iter == 2, then we can pretty
+    // easily solve for alpha using a direct inner product computation.
+    // The second phase is more complicated, eplained there.
     if (AA_iter > 1)
     {
       // Copy the stiffness matrix
@@ -1035,11 +1016,13 @@ namespace Step57
         alpha(m) = 1 - sum;
       }
 
+      std::cout << std::endl;
+      std::cout << "Values for alpha:" << std::endl;
       for (int i = 0; i < AA_iter; i++)
       {
         std::cout << alpha(i) << std::endl;
       }
-
+      std::cout << std::endl;
 
       // Here we calculate the updated solution, which we set equal to AA_sol
       Vector<double> AA_sol(dof_handler.n_dofs());
@@ -1077,7 +1060,7 @@ namespace Step57
         std::cout << "Searching for initial guess with Re = " << Re
                   << std::endl;
         //newton_iteration(1e-12, 50, 0, is_initial_step, false);
-        picard_iteration(1e-12, 50, 0, is_initial_step, false);
+        picard_iteration(1e-12, is_initial_step, false);
         is_initial_step = false;
       }
   }
@@ -1150,12 +1133,14 @@ namespace Step57
   // and run the other functions respectively. The max refinement can be set by
   // the argument.
   template <int dim>
-  void StationaryNavierStokes<dim>::run(const unsigned int refinement)
+  void StationaryNavierStokes<dim>::run(const int m,
+                                        unsigned int &picard_iter,
+                                        double Re)
   {
     GridGenerator::hyper_cube(triangulation);
     triangulation.refine_global(4);
 
-    const double Re = 1.0 / viscosity;
+    viscosity = 1.0 / Re;
 
     // If the viscosity is smaller than $1/1000$, we have to first search for an
     // initial guess via a continuation method. What we should notice is the
@@ -1163,10 +1148,12 @@ namespace Step57
     // this program. After that, we just do the same as we did when viscosity
     // is larger than $1/1000$: run Newton's iteration, refine the mesh,
     // transfer solutions, and repeat.
-    if (Re > 100.0)
+    picard_iteration(1e-12, true, true, m, picard_iter);
+    /*
+    if (Re > 1000.0)
       {
         std::cout << "Searching for initial guess ..." << std::endl;
-        const double step_size = 20.0;
+        const double step_size = 2000.0;
         compute_initial_guess(step_size);
         std::cout << "Found initial guess." << std::endl;
         std::cout << "Computing solution with target Re = " << Re << std::endl;
@@ -1184,42 +1171,84 @@ namespace Step57
         //newton_iteration(1e-12, 50, refinement, true, true);
         picard_iteration(1e-12, 50, refinement, true, true);
       }
+      */
   }
 } // namespace Step57
 
 int main()
 {
   try
-    {
-      using namespace Step57;
+  {
+    using namespace Step57;
 
-      StationaryNavierStokes<2> flow(/* degree = */ 1);
-      flow.run(4);
+    // Creating vectors to store things in and print them at the end
+    std::vector<double> iterations;
+    std::vector<double> time;
+    std::vector<int> Re = {1, 10, 100, 1000};
+    std::vector<int> m = {0, 1, 2, 10};
+
+    // quantities we need to run the code.
+    unsigned int picard_iter;
+
+
+    for (long unsigned int i = 0; i < Re.size(); i++)
+    {
+      for (long unsigned int j = 0; j < m.size(); j++)
+      {
+        picard_iter = 0;
+
+        // Timer start
+        auto start = high_resolution_clock::now();
+
+        StationaryNavierStokes<2> flow(/* degree = */ 1);
+        flow.run(m[j], picard_iter, Re[i]);
+
+        // Timer end
+        auto end = high_resolution_clock::now();
+
+        // Computational time
+        auto duration = duration_cast<microseconds>(end - start);
+
+        // output stuff
+        std::cout << "elapsed time: " << duration.count() * 1e-6
+                  << " seconds" << std::endl;
+        std::cout << "Total iterations: " << picard_iter - 1 << std::endl;
+        time.push_back(duration.count() * 1e-6);
+        iterations.push_back(picard_iter - 1);
+      }
     }
+
+    std::cout << std::endl;
+    std::cout << "Iterations count for: " << std::endl;
+    for (long unsigned int i = 0; i < Re.size(); i++)
+    {
+      std::cout << "Re = " << Re[i] << ": " << iterations[i] << std::endl;
+    }
+  }
   catch (std::exception &exc)
-    {
-      std::cerr << std::endl
-                << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-      std::cerr << "Exception on processing: " << std::endl
-                << exc.what() << std::endl
-                << "Aborting!" << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-      return 1;
-    }
+  {
+    std::cerr << std::endl
+              << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    std::cerr << "Exception on processing: " << std::endl
+              << exc.what() << std::endl
+              << "Aborting!" << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    return 1;
+  }
   catch (...)
-    {
-      std::cerr << std::endl
-                << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-      std::cerr << "Unknown exception!" << std::endl
-                << "Aborting!" << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-      return 1;
-    }
+  {
+    std::cerr << std::endl
+              << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    std::cerr << "Unknown exception!" << std::endl
+              << "Aborting!" << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    return 1;
+  }
   return 0;
 }
