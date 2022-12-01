@@ -119,7 +119,9 @@ namespace Step57
                           const int          m,
                           unsigned int       &picard_iter);
 
-    void compute_initial_guess(double step_size);
+    void compute_initial_guess(double step_size,
+                               unsigned int &picard_iter,
+                               const int m);
 
     double                               viscosity;
     double                               gamma;
@@ -777,7 +779,7 @@ namespace Step57
     FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),m + 1);
 
     while ((first_step || (current_res > tolerance)) &&
-           picard_iter < 12)
+           picard_iter < 50)
     {
       if (first_step)
       {
@@ -1044,23 +1046,26 @@ namespace Step57
   // number is increased step-by-step until we reach the target value. By
   // experiment, the solution to Stokes is good enough to be the initial guess
   // of NSE with Reynolds number 1000 so we start there.  To make sure the
-  // solution from previous problem is close enough to the next one, the step
+  // solution from previous problem is close to the next one, the step
   // size must be small enough.
   template <int dim>
-  void StationaryNavierStokes<dim>::compute_initial_guess(double step_size)
+  void StationaryNavierStokes<dim>::compute_initial_guess(double step_size,
+                                                      unsigned int &picard_iter,
+                                                      const int m)
   {
     const double target_Re = 1.0 / viscosity;
 
     bool is_initial_step = true;
 
-    for (double Re = 20.0; Re < target_Re;
+    for (double Re = 10.0; Re < target_Re;
          Re        = std::min(Re + step_size, target_Re))
       {
+        picard_iter = 0;
         viscosity = 1.0 / Re;
         std::cout << "Searching for initial guess with Re = " << Re
                   << std::endl;
         //newton_iteration(1e-12, 50, 0, is_initial_step, false);
-        picard_iteration(1e-12, is_initial_step, false);
+        picard_iteration(1e-12, is_initial_step, false, m, picard_iter);
         is_initial_step = false;
       }
   }
@@ -1148,18 +1153,17 @@ namespace Step57
     // this program. After that, we just do the same as we did when viscosity
     // is larger than $1/1000$: run Newton's iteration, refine the mesh,
     // transfer solutions, and repeat.
-    picard_iteration(1e-12, true, true, m, picard_iter);
-    /*
-    if (Re > 1000.0)
+
+    if (Re > 50.0)
       {
         std::cout << "Searching for initial guess ..." << std::endl;
-        const double step_size = 2000.0;
-        compute_initial_guess(step_size);
+        const double step_size = 200.0;
+        compute_initial_guess(step_size, picard_iter, m);
         std::cout << "Found initial guess." << std::endl;
         std::cout << "Computing solution with target Re = " << Re << std::endl;
         viscosity = 1.0 / Re;
         //newton_iteration(1e-12, 50, refinement, false, true);
-        picard_iteration(1e-12, 50, refinement, false, true);
+        picard_iteration(1e-12, false, true, m, picard_iter);
       }
     else
       {
@@ -1168,10 +1172,8 @@ namespace Step57
         // to search for the initial guess using a continuation
         // method. Newton's iteration can be started directly.
 
-        //newton_iteration(1e-12, 50, refinement, true, true);
-        picard_iteration(1e-12, 50, refinement, true, true);
+        picard_iteration(1e-12, true, true, m, picard_iter);
       }
-      */
   }
 } // namespace Step57
 
@@ -1184,8 +1186,8 @@ int main()
     // Creating vectors to store things in and print them at the end
     std::vector<double> iterations;
     std::vector<double> time;
-    std::vector<int> Re = {1, 10, 100, 1000};
-    std::vector<int> m = {0, 1, 2, 10};
+    std::vector<int> Re = {100};
+    std::vector<int> m = {2};
 
     // quantities we need to run the code.
     unsigned int picard_iter;
@@ -1222,8 +1224,26 @@ int main()
     std::cout << "Iterations count for: " << std::endl;
     for (long unsigned int i = 0; i < Re.size(); i++)
     {
-      std::cout << "Re = " << Re[i] << ": " << iterations[i] << std::endl;
+      std::cout << "Re = " << Re[i] << ":" << std::endl;
+      for (long unsigned int j = 0; j < m.size(); j++)
+      {
+        std::cout << "  m = " << m[j] << ": "
+                  << iterations[j+(Re.size()-1)*i] << std::endl;
+      }
     }
+
+    std::cout << std::endl;
+    std::cout << "Time (seconds) for: " << std::endl;
+    for (long unsigned int i = 0; i < Re.size(); i++)
+    {
+      std::cout << "Re = " << Re[i] << ":" << std::endl;
+      for (long unsigned int j = 0; j < m.size(); j++)
+      {
+        std::cout << "  m = " << m[j] << ": "
+                  << time[j+(Re.size()-1)*i] << std::endl;
+      }
+    }
+
   }
   catch (std::exception &exc)
   {
