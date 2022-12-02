@@ -481,8 +481,8 @@ namespace Step57
                           local_matrix(i, j) +=
                             (viscosity *
                                scalar_product(grad_phi_u[j], grad_phi_u[i]) +
-                             phi_u[j] * present_velocity_gradients[q] *
-                               phi_u[i] -
+                               grad_phi_u[j] * present_velocity_values[q] *
+                                 phi_u[i] -
                              div_phi_u[i] * phi_p[j] - phi_p[i] * div_phi_u[j] +
                              gamma * div_phi_u[j] * div_phi_u[i] +
                              phi_p[i] * phi_p[j]) *
@@ -499,6 +499,7 @@ namespace Step57
 
                 double present_velocity_divergence =
                   trace(present_velocity_gradients[q]);
+
                 local_rhs(i) +=
                   (-viscosity * scalar_product(present_velocity_gradients[q],
                                                grad_phi_u[i]) -
@@ -508,6 +509,16 @@ namespace Step57
                    present_velocity_divergence * phi_p[i] -
                    gamma * present_velocity_divergence * div_phi_u[i]) *
                   fe_values.JxW(q);
+
+/*
+                  local_rhs(i) +=
+                    (-viscosity * scalar_product(present_velocity_gradients[q],
+                                                 grad_phi_u[i]) +
+                     present_pressure_values[q] * div_phi_u[i] +
+                     present_velocity_divergence * phi_p[i] -
+                     gamma * present_velocity_divergence * div_phi_u[i]) *
+                    fe_values.JxW(q);
+                    */
               }
           }
 
@@ -1143,7 +1154,7 @@ namespace Step57
                                         double Re)
   {
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(4);
+    triangulation.refine_global(6);
 
     viscosity = 1.0 / Re;
 
@@ -1153,6 +1164,10 @@ namespace Step57
     // this program. After that, we just do the same as we did when viscosity
     // is larger than $1/1000$: run Newton's iteration, refine the mesh,
     // transfer solutions, and repeat.
+
+    picard_iteration(1e-12, true, false, m, picard_iter);
+
+    /*
 
     if (Re > 50.0)
       {
@@ -1174,6 +1189,7 @@ namespace Step57
 
         picard_iteration(1e-12, true, true, m, picard_iter);
       }
+      */
   }
 } // namespace Step57
 
@@ -1186,8 +1202,8 @@ int main()
     // Creating vectors to store things in and print them at the end
     std::vector<double> iterations;
     std::vector<double> time;
-    std::vector<int> Re = {100};
-    std::vector<int> m = {2};
+    std::vector<int> Re = {1, 10, 100, 1000};
+    std::vector<int> m = {0, 1, 2, 10};
 
     // quantities we need to run the code.
     unsigned int picard_iter;
@@ -1228,7 +1244,7 @@ int main()
       for (long unsigned int j = 0; j < m.size(); j++)
       {
         std::cout << "  m = " << m[j] << ": "
-                  << iterations[j+(Re.size()-1)*i] << std::endl;
+                  << iterations[j + m.size() * i] << std::endl;
       }
     }
 
@@ -1240,7 +1256,7 @@ int main()
       for (long unsigned int j = 0; j < m.size(); j++)
       {
         std::cout << "  m = " << m[j] << ": "
-                  << time[j+(Re.size()-1)*i] << std::endl;
+                  << time[j + m.size() * i] << std::endl;
       }
     }
 
