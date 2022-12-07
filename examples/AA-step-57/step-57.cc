@@ -897,8 +897,13 @@ namespace Step57
       if (j < m)
       {
         // New stuff that's hopefully faster than loops
-        AA_matrix.swap_col(m - j,m - 1 - j);
-        utilde_matrix.swap_col(m - j,m - 1 - j);
+        for (long unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+        {
+          AA_matrix(i, m - j) = AA_matrix(i, m - 1 - j);
+          utilde_matrix(i, m - j) = utilde_matrix(i, m - 1 - j);
+        }
+        //AA_matrix.swap_col(m - j,m - 1 - j);
+        //utilde_matrix.swap_col(m - j,m - 1 - j);
       }
       else if (j == m)
       {
@@ -942,6 +947,7 @@ namespace Step57
       FullMatrix<double> M;
       M.copy_from(system_stiff_matrix);
 
+
       Vector<double> alpha(AA_iter);
 
       if (AA_iter == 2)
@@ -982,6 +988,7 @@ namespace Step57
 
         int m = AA_iter - 1;
         Vector<double> F_m(dof_handler.n_dofs());
+
         FullMatrix<double> Fhat(dof_handler.n_dofs(),m);
 
         for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
@@ -999,11 +1006,34 @@ namespace Step57
         // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
 
         // Here we calculate Fhat' * M * Fhat
+
+        // Just trying some sparse stuff
+        SparsityPattern M_sparsity;
+        SparsityPattern Fhat_sparsity;
+        SparsityPattern MFhat_sparsity;
+        SparsityPattern trip_sparsity(m,m);
+
+
+        M_sparsity.copy_from(M);
+        Fhat_sparsity.copy_from(Fhat);
+        MFhat_sparsity.copy_from(Fhat);
+
+        SparseMatrix<double> M_Sparse(M_sparsity);
+        SparseMatrix<double> Fhat_Sparse(Fhat_sparsity);
+        SparseMatrix<double> MFhat_Sparse(MFhat_sparsity);
+        SparseMatrix<double> trip_Sparse(trip_sparsity); // this needs work
+
+        M_Sparse.mmult(MFhat_Sparse,Fhat_Sparse); // M * Fhat
+        //Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * M * Fhat
+
+
+
+
         FullMatrix<double> trip_prod(m);
+        FullMatrix<double> trip_inv(m);
         trip_prod.triple_product(M,Fhat,Fhat,true,false);
 
         // inv(Fhat' * M * Fhat)
-        FullMatrix<double> trip_inv(m);
         trip_inv.invert(trip_prod);
 
         // Calculate M * F_rhs
@@ -1014,8 +1044,13 @@ namespace Step57
         Vector<double> y2(m);
         Fhat.Tvmult(y2,y1);
 
+        // Creating the solver
+        //DirectUMFPACK AA_direct;
+        //AA_direct.solve(trip_prod, y2);
+
         // Calculate alpha_hat = inv(Fhat' * M * Fhat) * y2
         Vector<double> alpha_hat(m);
+        //alpha_hat = y2;
         trip_inv.vmult(alpha_hat,y2);
 
 
@@ -1154,7 +1189,7 @@ namespace Step57
                                         double Re)
   {
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(6);
+    triangulation.refine_global(5);
 
     viscosity = 1.0 / Re;
 
@@ -1202,8 +1237,8 @@ int main()
     // Creating vectors to store things in and print them at the end
     std::vector<double> iterations;
     std::vector<double> time;
-    std::vector<int> Re = {1, 10, 100, 1000};
-    std::vector<int> m = {0, 1, 2, 10};
+    std::vector<int> Re = {10};
+    std::vector<int> m = {2};
 
     // quantities we need to run the code.
     unsigned int picard_iter;
