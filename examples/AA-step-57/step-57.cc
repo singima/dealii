@@ -1006,29 +1006,66 @@ namespace Step57
         // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
 
         // Here we calculate Fhat' * M * Fhat
-
-        // Just trying some sparse stuff
         SparsityPattern M_sparsity;
         SparsityPattern Fhat_sparsity;
-        SparsityPattern MFhat_sparsity;
+        SparsityPattern MFhat_sparsity(dof_handler.n_dofs(),m);
         SparsityPattern trip_sparsity(m,m);
 
+        MFhat_sparsity.compress();
+        trip_sparsity.compress();
 
         M_sparsity.copy_from(M);
         Fhat_sparsity.copy_from(Fhat);
-        MFhat_sparsity.copy_from(Fhat);
+        //MFhat_sparsity.copy_from(Fhat);
+        //FullMatrix<double> trip(m);
+        //trip_sparsity.copy_from(trip);
 
         SparseMatrix<double> M_Sparse(M_sparsity);
         SparseMatrix<double> Fhat_Sparse(Fhat_sparsity);
         SparseMatrix<double> MFhat_Sparse(MFhat_sparsity);
-        SparseMatrix<double> trip_Sparse(trip_sparsity); // this needs work
+        SparseMatrix<double> trip_Sparse(trip_sparsity);
 
+        M_Sparse.copy_from(M);
+        Fhat_Sparse.copy_from(Fhat);
+
+        // When leaving the third argument blank, we are rewriting the sparsity
+        // pattern dictating it, which is MFhat_sparsity. This is ok, but it's
+        // expensive and if we can predict the sparsity patter we should make it
+        // and implement it
         M_Sparse.mmult(MFhat_Sparse,Fhat_Sparse); // M * Fhat
-        //Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * M * Fhat
+        Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * M * Fhat
+
+        /*
+        std::ofstream out1("MFhat_Sparse.svg");
+        std::ofstream out2("trip_Sparse.svg");
+        MFhat_sparsity.print_svg(out1);
+        trip_sparsity.print_svg(out2);
+        */
+
+        // NOTE: The code would be optimized if we could somehow define the
+        // sparsity pattern before these multiplications. That way we're not
+        // rewriting the sparsity patterns
+
+        Vector<double> y1_Sparse(dof_handler.n_dofs());
+        Vector<double> y2_Sparse(m);
+        M_Sparse.vmult(y1_Sparse,F_m);
+        Fhat_Sparse.Tvmult(y2_Sparse,y1_Sparse);
+
+        // Creating the solver
+        SparseDirectUMFPACK AA_direct;
+        AA_direct.solve(trip_Sparse, y2_Sparse);
+
+        // Evaluate the implicitly imposed condition on alpha.
+        double sum = 0;
+        for (int i = 0; i < m; i++)
+        {
+          alpha(i) = -y2_Sparse(i);
+          sum += alpha(i);
+        }
+        alpha(m) = 1 - sum;
 
 
-
-
+/*
         FullMatrix<double> trip_prod(m);
         FullMatrix<double> trip_inv(m);
         trip_prod.triple_product(M,Fhat,Fhat,true,false);
@@ -1044,13 +1081,8 @@ namespace Step57
         Vector<double> y2(m);
         Fhat.Tvmult(y2,y1);
 
-        // Creating the solver
-        //DirectUMFPACK AA_direct;
-        //AA_direct.solve(trip_prod, y2);
-
         // Calculate alpha_hat = inv(Fhat' * M * Fhat) * y2
         Vector<double> alpha_hat(m);
-        //alpha_hat = y2;
         trip_inv.vmult(alpha_hat,y2);
 
 
@@ -1062,6 +1094,7 @@ namespace Step57
           sum += alpha(i);
         }
         alpha(m) = 1 - sum;
+*/
       }
 
       std::cout << std::endl;
@@ -1237,8 +1270,8 @@ int main()
     // Creating vectors to store things in and print them at the end
     std::vector<double> iterations;
     std::vector<double> time;
-    std::vector<int> Re = {10};
-    std::vector<int> m = {2};
+    std::vector<int> Re = {1000};
+    std::vector<int> m = {10};
 
     // quantities we need to run the code.
     unsigned int picard_iter;
