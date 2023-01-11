@@ -138,6 +138,7 @@ namespace Step57
     BlockSparsityPattern      sparsity_pattern;
     BlockSparseMatrix<double> system_matrix;
     BlockSparseMatrix<double> system_stiff_matrix;
+    //SparseMatrix<double>      M_stiff;
     SparseMatrix<double>      pressure_mass_matrix;
 
     BlockVector<double> present_solution;
@@ -148,7 +149,8 @@ namespace Step57
     void Anderson_Acceleration(FullMatrix<double> &AA_matrix,
                                FullMatrix<double> &utilde_matrix,
                                int &AA_iter,
-                               const int &m);
+                               const int &m,
+                               SparseMatrix<double> &M_Sparse);
   };
 
   // @sect3{Boundary values and right hand side}
@@ -789,6 +791,12 @@ namespace Step57
     FullMatrix<double> AA_matrix(dof_handler.n_dofs(),m + 1);
     FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),m + 1);
 
+    // Stiffness matrix
+    FullMatrix<double> M;
+    SparsityPattern M_sparsity;
+    SparseMatrix<double> M_Sparse;
+
+
     while ((first_step || (current_res > tolerance)) &&
            picard_iter < 50)
     {
@@ -807,11 +815,20 @@ namespace Step57
         current_res = system_rhs.l2_norm();
         std::cout << "The residual of initial guess is " << current_res
                   << std::endl;
+
+        // Dealing with the stiffness matrix
+        // This process takes a long time, if we need to improve time, this is
+        // the place to focus on
+        M.copy_from(system_stiff_matrix);
+        M_sparsity.copy_from(M);
+        M_Sparse.reinit(M_sparsity);
+        M_Sparse.copy_from(M);
       }
       else
       {
         std::cout << "**************************" << std::endl;
         std::cout << "Picard Iteration: " << picard_iter << std::endl;
+
         // Set evaluation_point equal to the previous solution, it's
         // what is evaluated during the actual FEM.
         evaluation_point = present_solution;
@@ -838,7 +855,7 @@ namespace Step57
 
         if (picard_iter > 0 && m != 0)
         {
-          Anderson_Acceleration(AA_matrix,utilde_matrix,AA_iter,m);
+          Anderson_Acceleration(AA_matrix,utilde_matrix,AA_iter,m,M_Sparse);
 
           if (AA_iter < m + 1)
             AA_iter++;
@@ -881,7 +898,8 @@ namespace Step57
     FullMatrix<double> &AA_matrix,
     FullMatrix<double> &utilde_matrix,
     int &AA_iter,
-    const int &m)
+    const int &m,
+    SparseMatrix<double> &M_Sparse)
   {
     // This loop creates the matrix that stores all the solution data from
     // previous iterations.
@@ -943,10 +961,7 @@ namespace Step57
     // The second phase is more complicated, eplained there.
     if (AA_iter > 1)
     {
-      // Copy the stiffness matrix
-      FullMatrix<double> M;
-      M.copy_from(system_stiff_matrix);
-
+      auto start = high_resolution_clock::now();
 
       Vector<double> alpha(AA_iter);
 
@@ -966,10 +981,19 @@ namespace Step57
 
         double numerator;
         double denominator;
-        numerator = M.matrix_scalar_product(res_diff,res_prev);
-        denominator = M.matrix_norm_square(res_diff);
+        numerator = M_Sparse.matrix_scalar_product(res_diff,res_prev);
+        denominator = M_Sparse.matrix_norm_square(res_diff);
         alpha(0) = -numerator / denominator;
         alpha(1) = 1 - alpha(0);
+
+        // Timer end
+        auto end = high_resolution_clock::now();
+
+        // Computational time
+        auto duration = duration_cast<microseconds>(end - start);
+
+        std::cout << "AA (m=1) time: " << duration.count() * 1e-6
+                  << " seconds" << std::endl;
       }
       else
       {
@@ -1005,8 +1029,10 @@ namespace Step57
         // Essentially we calculate this quantity:
         // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
 
+        auto start = high_resolution_clock::now();
+
         // Here we calculate Fhat' * M * Fhat
-        SparsityPattern M_sparsity;
+        //SparsityPattern M_sparsity;
         SparsityPattern Fhat_sparsity;
         SparsityPattern MFhat_sparsity(dof_handler.n_dofs(),m);
         SparsityPattern trip_sparsity(m,m);
@@ -1014,18 +1040,20 @@ namespace Step57
         MFhat_sparsity.compress();
         trip_sparsity.compress();
 
-        M_sparsity.copy_from(M);
+        // THIS IS TAKING A LOT OF TIME
+        //M_sparsity.copy_from(M);
         Fhat_sparsity.copy_from(Fhat);
         //MFhat_sparsity.copy_from(Fhat);
         //FullMatrix<double> trip(m);
         //trip_sparsity.copy_from(trip);
 
-        SparseMatrix<double> M_Sparse(M_sparsity);
+        //SparseMatrix<double> M_Sparse(M_sparsity);
         SparseMatrix<double> Fhat_Sparse(Fhat_sparsity);
         SparseMatrix<double> MFhat_Sparse(MFhat_sparsity);
         SparseMatrix<double> trip_Sparse(trip_sparsity);
 
-        M_Sparse.copy_from(M);
+        // THIS IS TAKING A LOT OF TIME
+        //M_Sparse.copy_from(M);
         Fhat_Sparse.copy_from(Fhat);
 
         // When leaving the third argument blank, we are rewriting the sparsity
@@ -1063,6 +1091,15 @@ namespace Step57
           sum += alpha(i);
         }
         alpha(m) = 1 - sum;
+
+        // Timer end
+        auto end = high_resolution_clock::now();
+
+        // Computational time
+        auto duration = duration_cast<microseconds>(end - start);
+
+        std::cout << "AA (m>1) time: " << duration.count() * 1e-6
+                  << " seconds" << std::endl;
 
 
 /*
