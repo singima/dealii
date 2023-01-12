@@ -136,9 +136,10 @@ namespace Step57
     AffineConstraints<double> nonzero_constraints;
 
     BlockSparsityPattern      sparsity_pattern;
+    SparsityPattern           sparsity_pattern_nb;
     BlockSparseMatrix<double> system_matrix;
-    BlockSparseMatrix<double> system_stiff_matrix;
-    //SparseMatrix<double>      M_stiff;
+    //BlockSparseMatrix<double> system_stiff_matrix;
+    SparseMatrix<double>      system_stiff_matrix;
     SparseMatrix<double>      pressure_mass_matrix;
 
     BlockVector<double> present_solution;
@@ -149,8 +150,7 @@ namespace Step57
     void Anderson_Acceleration(FullMatrix<double> &AA_matrix,
                                FullMatrix<double> &utilde_matrix,
                                int &AA_iter,
-                               const int &m,
-                               SparseMatrix<double> &M_Sparse);
+                               const int &m);
   };
 
   // @sect3{Boundary values and right hand side}
@@ -360,12 +360,15 @@ namespace Step57
   {
     {
       BlockDynamicSparsityPattern dsp(dofs_per_block, dofs_per_block);
+      DynamicSparsityPattern dsp_nb(dof_handler.n_dofs(),dof_handler.n_dofs());
       DoFTools::make_sparsity_pattern(dof_handler, dsp, nonzero_constraints);
+      DoFTools::make_sparsity_pattern(dof_handler, dsp_nb, nonzero_constraints);
       sparsity_pattern.copy_from(dsp);
+      sparsity_pattern_nb.copy_from(dsp_nb);
     }
 
     system_matrix.reinit(sparsity_pattern);
-    system_stiff_matrix.reinit(sparsity_pattern);
+    system_stiff_matrix.reinit(sparsity_pattern_nb);
 
     present_solution.reinit(dofs_per_block);
     newton_update.reinit(dofs_per_block);
@@ -493,7 +496,7 @@ namespace Step57
                           // We need the mass matrix so we calculate it separately
                           local_stiff_matrix(i, j) +=
                           (viscosity *
-                             scalar_product(grad_phi_u[j], grad_phi_u[i])) *
+                            scalar_product(grad_phi_u[j], grad_phi_u[i])) *
                           fe_values.JxW(q);
 
                       }
@@ -541,7 +544,7 @@ namespace Step57
             constraints_used.distribute_local_to_global(local_stiff_matrix,
                                                         local_dof_indices,
                                                         system_stiff_matrix);
-                                                                  }
+          }
         else
           {
             constraints_used.distribute_local_to_global(local_rhs,
@@ -563,7 +566,7 @@ namespace Step57
         // whole system matrix will have rows that are completely
         // zero. Luckily, FGMRES handles these rows without any problem.
         system_matrix.block(1, 1) = 0;
-        system_stiff_matrix.block(1, 1) = 0;
+        //system_stiff_matrix.block(1, 1) = 0;
       }
   }
 
@@ -791,12 +794,6 @@ namespace Step57
     FullMatrix<double> AA_matrix(dof_handler.n_dofs(),m + 1);
     FullMatrix<double> utilde_matrix(dof_handler.n_dofs(),m + 1);
 
-    // Stiffness matrix
-    FullMatrix<double> M;
-    SparsityPattern M_sparsity;
-    SparseMatrix<double> M_Sparse;
-
-
     while ((first_step || (current_res > tolerance)) &&
            picard_iter < 50)
     {
@@ -815,14 +812,6 @@ namespace Step57
         current_res = system_rhs.l2_norm();
         std::cout << "The residual of initial guess is " << current_res
                   << std::endl;
-
-        // Dealing with the stiffness matrix
-        // This process takes a long time, if we need to improve time, this is
-        // the place to focus on
-        M.copy_from(system_stiff_matrix);
-        M_sparsity.copy_from(M);
-        M_Sparse.reinit(M_sparsity);
-        M_Sparse.copy_from(M);
       }
       else
       {
@@ -855,7 +844,7 @@ namespace Step57
 
         if (picard_iter > 0 && m != 0)
         {
-          Anderson_Acceleration(AA_matrix,utilde_matrix,AA_iter,m,M_Sparse);
+          Anderson_Acceleration(AA_matrix,utilde_matrix,AA_iter,m);
 
           if (AA_iter < m + 1)
             AA_iter++;
@@ -898,8 +887,7 @@ namespace Step57
     FullMatrix<double> &AA_matrix,
     FullMatrix<double> &utilde_matrix,
     int &AA_iter,
-    const int &m,
-    SparseMatrix<double> &M_Sparse)
+    const int &m)
   {
     // This loop creates the matrix that stores all the solution data from
     // previous iterations.
@@ -920,8 +908,6 @@ namespace Step57
           AA_matrix(i, m - j) = AA_matrix(i, m - 1 - j);
           utilde_matrix(i, m - j) = utilde_matrix(i, m - 1 - j);
         }
-        //AA_matrix.swap_col(m - j,m - 1 - j);
-        //utilde_matrix.swap_col(m - j,m - 1 - j);
       }
       else if (j == m)
       {
@@ -981,8 +967,8 @@ namespace Step57
 
         double numerator;
         double denominator;
-        numerator = M_Sparse.matrix_scalar_product(res_diff,res_prev);
-        denominator = M_Sparse.matrix_norm_square(res_diff);
+        numerator = system_stiff_matrix.matrix_scalar_product(res_diff,res_prev);
+        denominator = system_stiff_matrix.matrix_norm_square(res_diff);
         alpha(0) = -numerator / denominator;
         alpha(1) = 1 - alpha(0);
 
@@ -1025,14 +1011,9 @@ namespace Step57
           }
         }
 
-        // This follows the crackhead-like work that I did on the table.
-        // Essentially we calculate this quantity:
-        // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
-
         auto start = high_resolution_clock::now();
 
-        // Here we calculate Fhat' * M * Fhat
-        //SparsityPattern M_sparsity;
+        // Here we set up sparse matrices for the computations
         SparsityPattern Fhat_sparsity;
         SparsityPattern MFhat_sparsity(dof_handler.n_dofs(),m);
         SparsityPattern trip_sparsity(m,m);
@@ -1040,35 +1021,21 @@ namespace Step57
         MFhat_sparsity.compress();
         trip_sparsity.compress();
 
-        // THIS IS TAKING A LOT OF TIME
-        //M_sparsity.copy_from(M);
         Fhat_sparsity.copy_from(Fhat);
-        //MFhat_sparsity.copy_from(Fhat);
-        //FullMatrix<double> trip(m);
-        //trip_sparsity.copy_from(trip);
 
-        //SparseMatrix<double> M_Sparse(M_sparsity);
         SparseMatrix<double> Fhat_Sparse(Fhat_sparsity);
         SparseMatrix<double> MFhat_Sparse(MFhat_sparsity);
         SparseMatrix<double> trip_Sparse(trip_sparsity);
 
-        // THIS IS TAKING A LOT OF TIME
-        //M_Sparse.copy_from(M);
         Fhat_Sparse.copy_from(Fhat);
 
-        // When leaving the third argument blank, we are rewriting the sparsity
-        // pattern dictating it, which is MFhat_sparsity. This is ok, but it's
-        // expensive and if we can predict the sparsity patter we should make it
-        // and implement it
-        M_Sparse.mmult(MFhat_Sparse,Fhat_Sparse); // M * Fhat
-        Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * M * Fhat
+        // This follows the crackhead-like work that I did on the table.
+        // Essentially we calculate this quantity:
+        // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
 
-        /*
-        std::ofstream out1("MFhat_Sparse.svg");
-        std::ofstream out2("trip_Sparse.svg");
-        MFhat_sparsity.print_svg(out1);
-        trip_sparsity.print_svg(out2);
-        */
+        // Here we calculate Fhat' * M * Fhat
+        system_stiff_matrix.mmult(MFhat_Sparse,Fhat_Sparse); // M * Fhat
+        Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * M * Fhat
 
         // NOTE: The code would be optimized if we could somehow define the
         // sparsity pattern before these multiplications. That way we're not
@@ -1076,7 +1043,7 @@ namespace Step57
 
         Vector<double> y1_Sparse(dof_handler.n_dofs());
         Vector<double> y2_Sparse(m);
-        M_Sparse.vmult(y1_Sparse,F_m);
+        system_stiff_matrix.vmult(y1_Sparse,F_m);
         Fhat_Sparse.Tvmult(y2_Sparse,y1_Sparse);
 
         // Creating the solver
@@ -1100,38 +1067,6 @@ namespace Step57
 
         std::cout << "AA (m>1) time: " << duration.count() * 1e-6
                   << " seconds" << std::endl;
-
-
-/*
-        FullMatrix<double> trip_prod(m);
-        FullMatrix<double> trip_inv(m);
-        trip_prod.triple_product(M,Fhat,Fhat,true,false);
-
-        // inv(Fhat' * M * Fhat)
-        trip_inv.invert(trip_prod);
-
-        // Calculate M * F_rhs
-        Vector<double> y1(dof_handler.n_dofs());
-        M.vmult(y1,F_m);
-
-        // Calculate Fhat' * y
-        Vector<double> y2(m);
-        Fhat.Tvmult(y2,y1);
-
-        // Calculate alpha_hat = inv(Fhat' * M * Fhat) * y2
-        Vector<double> alpha_hat(m);
-        trip_inv.vmult(alpha_hat,y2);
-
-
-        // Evaluate the implicitly imposed condition on alpha.
-        double sum = 0;
-        for (int i = 0; i < m; i++)
-        {
-          alpha(i) = -alpha_hat(i);
-          sum += alpha(i);
-        }
-        alpha(m) = 1 - sum;
-*/
       }
 
       std::cout << std::endl;
@@ -1308,7 +1243,7 @@ int main()
     std::vector<double> iterations;
     std::vector<double> time;
     std::vector<int> Re = {1000};
-    std::vector<int> m = {10};
+    std::vector<int> m = {0, 1, 2, 10};
 
     // quantities we need to run the code.
     unsigned int picard_iter;
