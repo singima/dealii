@@ -536,7 +536,7 @@ namespace Step77
     setup_system(/*initial_step=*/true);
     set_boundary_values();
 
-    for (unsigned int refinement_cycle = 0; refinement_cycle < 6;
+    for (unsigned int refinement_cycle = 0; refinement_cycle < 1;
          ++refinement_cycle)
       {
         computing_timer.reset();
@@ -558,6 +558,12 @@ namespace Step77
           typename SUNDIALS::KINSOL<Vector<double>>::AdditionalData
             additional_data;
           additional_data.function_tolerance = target_tolerance;
+
+          // Important to sppecify strategy for the nonlinear solver
+          SUNDIALS::KINSOL<Vector<double>>::AdditionalData::SolutionStrategy strategy
+            = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::newton;
+
+          additional_data.strategy = strategy;
 
           SUNDIALS::KINSOL<Vector<double>> nonlinear_solver(additional_data);
 
