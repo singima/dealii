@@ -122,6 +122,12 @@ namespace Step77
     Vector<double> current_solution;
 
     TimerOutput computing_timer;
+
+    int solver_type = 1;  // 0 - linesearch
+                          // 1 - Newton
+                          // 2 - Picard
+
+    int AA_size = 10;     // Only use when using Picard solver
   };
 
 
@@ -246,6 +252,9 @@ namespace Step77
               for (unsigned int i = 0; i < dofs_per_cell; ++i)
                 {
                   for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                  if (solver_type == 0 || solver_type == 1)
+                  {
+                    // Newton iteration (or Newton w/ linesearch)
                     cell_matrix(i, j) +=
                       (((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
                          * coeff                       //   * a_n
@@ -258,6 +267,16 @@ namespace Step77
                           * evaluation_point_gradients[q]) //      * \nabla u_n)
                          * evaluation_point_gradients[q])) //   * \nabla u_n)))
                        * fe_values.JxW(q));                // * dx
+                    }
+                    else if (solver_type == 2)
+                    {
+                      // Picard iteration
+                      cell_matrix(i, j) +=
+                        ((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
+                           * coeff                       //   * a_n
+                           * fe_values.shape_grad(j, q)) //   * \nabla u_n)))
+                         * fe_values.JxW(q));                // * dx
+                    }
                 }
             }
 
@@ -559,10 +578,25 @@ namespace Step77
             additional_data;
           additional_data.function_tolerance = target_tolerance;
 
-          // Important to sppecify strategy for the nonlinear solver
-          SUNDIALS::KINSOL<Vector<double>>::AdditionalData::SolutionStrategy strategy
-            = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::newton;
+          // Important to specify strategy for the nonlinear solver
+          SUNDIALS::KINSOL<Vector<double>>::AdditionalData::SolutionStrategy strategy;
+          if (solver_type == 0)
+          {
+            // This is the default but we put it here anyway for fun
+            strategy = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::linesearch;
+          }
+          else if (solver_type == 1)
+          {
+            // Newton
+            strategy  = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::newton;
+          }
+          else if (solver_type == 2)
+          {
+            // Picard
+            strategy  = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::picard;
 
+            additional_data.anderson_subspace_size = AA_size;
+          }
           additional_data.strategy = strategy;
 
           SUNDIALS::KINSOL<Vector<double>> nonlinear_solver(additional_data);
@@ -604,6 +638,8 @@ namespace Step77
           nonlinear_solver.reinit_vector = [&](Vector<double> &x) {
             x.reinit(dof_handler.n_dofs());
           };
+
+          // Newton iteration
 
           nonlinear_solver.residual =
             [&](const Vector<double> &evaluation_point,
