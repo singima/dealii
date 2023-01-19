@@ -32,6 +32,25 @@
 #include <deal.II/base/timer.h>
 #include <deal.II/base/utilities.h>
 
+// Included from step-40
+#include <deal.II/lac/generic_linear_algebra.h>
+
+#define FORCE_USE_OF_TRILINOS
+
+namespace LA
+{
+#if defined(DEAL_II_WITH_PETSC) && !defined(DEAL_II_PETSC_WITH_COMPLEX) && \
+  !(defined(DEAL_II_WITH_TRILINOS) && defined(FORCE_USE_OF_TRILINOS))
+  using namespace dealii::LinearAlgebraPETSc;
+#  define USE_PETSC_LA
+#elif defined(DEAL_II_WITH_TRILINOS)
+  using namespace dealii::LinearAlgebraTrilinos;
+#else
+#  error DEAL_II_WITH_PETSC or DEAL_II_WITH_TRILINOS required
+#endif
+} // namespace LA
+// End of stuff included from step-40
+
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
@@ -39,9 +58,16 @@
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/sparse_direct.h>
 
+// Only used for one function
+#include <deal.II/lac/sparsity_tools.h>
+
 #include <deal.II/grid/tria.h>
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/grid_refinement.h>
+
+// MPI libraries
+#include <deal.II/distributed/tria.h>
+#include <deal.II/distributed/grid_refinement.h>
 
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
@@ -56,16 +82,20 @@
 #include <deal.II/numerics/error_estimator.h>
 #include <deal.II/numerics/solution_transfer.h>
 
+#include <deal.II/base/conditional_ostream.h>
+
 #include <deal.II/sundials/kinsol.h>
 
 #include <fstream>
 #include <iostream>
 
+// remember this
 
 namespace Step77
 {
   using namespace dealii;
 
+  using kinsol = SUNDIALS::KINSOL<Vector<double>>;
 
   // @sect3{The <code>MinimalSurfaceProblem</code> class template}
 
@@ -108,22 +138,32 @@ namespace Step77
     void compute_residual(const Vector<double> &evaluation_point,
                           Vector<double> &      residual);
 
-    Triangulation<dim> triangulation;
+    MPI_Comm mpi_communicator;
+
+    parallel::distributed::Triangulation<dim> triangulation;
 
     DoFHandler<dim> dof_handler;
     FE_Q<dim>       fe;
 
+    // Added MPI stuff
+    IndexSet locally_owned_dofs;
+    IndexSet locally_relevant_dofs;
+
+    ConditionalOStream pcout;
+    TimerOutput computing_timer;
+    // End of MPI added stuff
+
     AffineConstraints<double> hanging_node_constraints;
 
+    // TIMO: remove this
     SparsityPattern                      sparsity_pattern;
-    SparseMatrix<double>                 jacobian_matrix;
-    std::unique_ptr<SparseDirectUMFPACK> jacobian_matrix_factorization;
 
-    Vector<double> current_solution;
+    LA::MPI::SparseMatrix<double>                 jacobian_matrix;
+    //std::unique_ptr<SparseDirectUMFPACK> jacobian_matrix_factorization;
 
-    TimerOutput computing_timer;
+    LA::MPI::Vector current_solution;
 
-    int solver_type = 1;  // 0 - linesearch
+    int solver_type = 2;  // 0 - linesearch
                           // 1 - Newton
                           // 2 - Picard
 
@@ -160,9 +200,19 @@ namespace Step77
   // step-15 already does, and so there is little to discuss.
   template <int dim>
   MinimalSurfaceProblem<dim>::MinimalSurfaceProblem()
-    : dof_handler(triangulation)
+    : mpi_communicator(MPI_COMM_WORLD)
+    , triangulation(mpi_communicator,
+                    typename Triangulation<dim>::MeshSmoothing(
+                    Triangulation<dim>::smoothing_on_refinement |
+                    Triangulation<dim>::smoothing_on_coarsening))
+    , dof_handler(triangulation)
     , fe(1)
-    , computing_timer(std::cout, TimerOutput::never, TimerOutput::wall_times)
+    , pcout(std::cout,
+            (Utilities::MPI::this_mpi_process(mpi_communicator) == 0))
+    , computing_timer(mpi_communicator,
+                      pcout,
+                      TimerOutput::never,
+                      TimerOutput::wall_times)
   {}
 
 
@@ -175,7 +225,18 @@ namespace Step77
     if (initial_step)
       {
         dof_handler.distribute_dofs(fe);
-        current_solution.reinit(dof_handler.n_dofs());
+        current_solution.reinit(dof_handler.n_dofs(), mpi_communicator);
+
+        // Added because MPI
+        locally_owned_dofs = dof_handler.locally_owned_dofs();
+        locally_relevant_dofs =
+          DoFTools::extract_locally_relevant_dofs(dof_handler);
+
+        locally_relevant_solution.reinit(locally_owned_dofs,
+                                         locally_relevant_dofs,
+                                         mpi_communicator);
+        system_rhs.reinit(locally_owned_dofs, mpi_communicator);
+        // End of MPI stuff
 
         hanging_node_constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler,
@@ -183,14 +244,25 @@ namespace Step77
         hanging_node_constraints.close();
       }
 
-    DynamicSparsityPattern dsp(dof_handler.n_dofs());
-    DoFTools::make_sparsity_pattern(dof_handler, dsp);
+    //DynamicSparsityPattern dsp(dof_handler.n_dofs());
+    DynamicSparsityPattern dsp(locally_relevant_dofs);
+
+    //DoFTools::make_sparsity_pattern(dof_handler, dsp);
+    DoFTools::make_sparsity_pattern(dof_handler, dsp,
+                                    hanging_node_constraints, false);
+
+    // Included for MPI
+    SparsityTools::distribute_sparsity_pattern(dsp,
+                                               dof_handler.locally_owned_dofs(),
+                                               mpi_communicator,
+                                               locally_relevant_dofs);
 
     hanging_node_constraints.condense(dsp);
 
-    sparsity_pattern.copy_from(dsp);
-    jacobian_matrix.reinit(sparsity_pattern);
-    jacobian_matrix_factorization.reset();
+
+    sparsity_pattern.copy_from(dsp);     // TIMO remove
+    jacobian_matrix.reinit(sparsity_pattern); // mpi_communicator...?
+    //jacobian_matrix_factorization.reset();
   }
 
 
@@ -211,10 +283,13 @@ namespace Step77
   void MinimalSurfaceProblem<dim>::compute_and_factorize_jacobian(
     const Vector<double> &evaluation_point)
   {
+        // TIMO : evaluation point with ghost values
+
     {
+
       TimerOutput::Scope t(computing_timer, "assembling the Jacobian");
 
-      std::cout << "  Computing Jacobian matrix" << std::endl;
+      pcout << "  Computing Jacobian matrix" << std::endl;
 
       const QGauss<dim> quadrature_formula(fe.degree + 1);
 
@@ -236,6 +311,8 @@ namespace Step77
 
       for (const auto &cell : dof_handler.active_cell_iterators())
         {
+              // TIMO if locally owned
+
           cell_matrix = 0;
 
           fe_values.reinit(cell);
@@ -286,17 +363,21 @@ namespace Step77
                                                               jacobian_matrix);
         }
 
-      std::map<types::global_dof_index, double> boundary_values;
+// TIMO  need to go into AffineConstraints, then remove all this
+// use ZERO boundary conditions!
+      /*std::map<types::global_dof_index, double> boundary_values;
       VectorTools::interpolate_boundary_values(dof_handler,
                                                0,
                                                Functions::ZeroFunction<dim>(),
                                                boundary_values);
       Vector<double> dummy_solution(dof_handler.n_dofs());
       Vector<double> dummy_rhs(dof_handler.n_dofs());
+
       MatrixTools::apply_boundary_values(boundary_values,
                                          jacobian_matrix,
                                          dummy_solution,
-                                         dummy_rhs);
+                                         dummy_rhs);*/
+
     }
 
     // The second half of the function then deals with factorizing the
@@ -319,10 +400,11 @@ namespace Step77
     {
       TimerOutput::Scope t(computing_timer, "factorizing the Jacobian");
 
-      std::cout << "  Factorizing Jacobian matrix" << std::endl;
+      pcout << "  Factorizing Jacobian matrix" << std::endl;
 
-      jacobian_matrix_factorization = std::make_unique<SparseDirectUMFPACK>();
-      jacobian_matrix_factorization->factorize(jacobian_matrix);
+// TIMO later
+      //jacobian_matrix_factorization = std::make_unique<SparseDirectUMFPACK>();
+      //jacobian_matrix_factorization->factorize(jacobian_matrix);
     }
   }
 
@@ -351,7 +433,7 @@ namespace Step77
   {
     TimerOutput::Scope t(computing_timer, "assembling the residual");
 
-    std::cout << "  Computing residual vector..." << std::flush;
+    pcout << "  Computing residual vector..." << std::flush;
 
     const QGauss<dim> quadrature_formula(fe.degree + 1);
     FEValues<dim>     fe_values(fe,
@@ -368,7 +450,7 @@ namespace Step77
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
     for (const auto &cell : dof_handler.active_cell_iterators())
-      {
+      {// TIMO locally owned
         cell_residual = 0;
         fe_values.reinit(cell);
 
@@ -395,17 +477,20 @@ namespace Step77
           residual(local_dof_indices[i]) += cell_residual(i);
       }
 
-    hanging_node_constraints.condense(residual);
+    //hanging_node_constraints.condense(residual);
 
-    for (const types::global_dof_index i :
-         DoFTools::extract_boundary_dofs(dof_handler))
-      residual(i) = 0;
+// TIMO maybe?
+hanging_node_constraints.set_zero(residual);
 
-    for (const types::global_dof_index i :
-         DoFTools::extract_hanging_node_dofs(dof_handler))
-      residual(i) = 0;
+    // for (const types::global_dof_index i :
+    //      DoFTools::extract_boundary_dofs(dof_handler))
+    //   residual(i) = 0;
+    //
+    // for (const types::global_dof_index i :
+    //      DoFTools::extract_hanging_node_dofs(dof_handler))
+    //   residual(i) = 0;
 
-    std::cout << " norm=" << residual.l2_norm() << std::endl;
+    pcout << " norm=" << residual.l2_norm() << std::endl;
   }
 
 
@@ -434,9 +519,10 @@ namespace Step77
   {
     TimerOutput::Scope t(computing_timer, "linear system solve");
 
-    std::cout << "  Solving linear system" << std::endl;
+    pcout << "  Solving linear system" << std::endl;
 
-    jacobian_matrix_factorization->vmult(solution, rhs);
+
+    //jacobian_matrix_factorization->vmult(solution, rhs);
 
     hanging_node_constraints.distribute(solution);
   }
@@ -450,6 +536,7 @@ namespace Step77
   template <int dim>
   void MinimalSurfaceProblem<dim>::refine_mesh()
   {
+    /*
     Vector<float> estimated_error_per_cell(triangulation.n_active_cells());
 
     KellyErrorEstimator<dim>::estimate(
@@ -487,7 +574,8 @@ namespace Step77
 
     set_boundary_values();
 
-    setup_system(/*initial_step=*/false);
+    setup_system(/*initial_step=false);
+    */
   }
 
 
@@ -495,15 +583,17 @@ namespace Step77
   template <int dim>
   void MinimalSurfaceProblem<dim>::set_boundary_values()
   {
-    std::map<types::global_dof_index, double> boundary_values;
-    VectorTools::interpolate_boundary_values(dof_handler,
-                                             0,
-                                             BoundaryValues<dim>(),
-                                             boundary_values);
-    for (const auto &boundary_value : boundary_values)
-      current_solution(boundary_value.first) = boundary_value.second;
-
-    hanging_node_constraints.distribute(current_solution);
+    // TIMO  need a zero constraints and nonzero constraints object/
+    // like in step-57
+    // std::map<types::global_dof_index, double> boundary_values;
+    // VectorTools::interpolate_boundary_values(dof_handler,
+    //                                          0,
+    //                                          BoundaryValues<dim>(),
+    //                                          boundary_values);
+    // for (const auto &boundary_value : boundary_values)
+    //   current_solution(boundary_value.first) = boundary_value.second;
+    //
+    // hanging_node_constraints.distribute(current_solution);
   }
 
 
@@ -517,6 +607,7 @@ namespace Step77
     DataOut<dim> data_out;
 
     data_out.attach_dof_handler(dof_handler);
+    // TIMO: ghosted vector?
     data_out.add_data_vector(current_solution, "solution");
     data_out.build_patches();
 
@@ -549,6 +640,15 @@ namespace Step77
   template <int dim>
   void MinimalSurfaceProblem<dim>::run()
   {
+    pcout << "Running with "
+#ifdef USE_PETSC_LA
+          << "PETSc"
+#else
+          << "Trilinos"
+#endif
+          << " on " << Utilities::MPI::n_mpi_processes(mpi_communicator)
+          << " MPI rank(s)..." << std::endl;
+
     GridGenerator::hyper_ball(triangulation);
     triangulation.refine_global(2);
 
@@ -559,13 +659,13 @@ namespace Step77
          ++refinement_cycle)
       {
         computing_timer.reset();
-        std::cout << "Mesh refinement step " << refinement_cycle << std::endl;
+        pcout << "Mesh refinement step " << refinement_cycle << std::endl;
 
         if (refinement_cycle != 0)
           refine_mesh();
 
         const double target_tolerance = 1e-3 * std::pow(0.1, refinement_cycle);
-        std::cout << "  Target_tolerance: " << target_tolerance << std::endl
+        pcout << "  Target_tolerance: " << target_tolerance << std::endl
                   << std::endl;
 
         // This is where the fun starts. At the top we create the KINSOL solver
@@ -574,32 +674,37 @@ namespace Step77
         // reach; but you might want to look into what other members the
         // SUNDIALS::KINSOL::AdditionalData class has and play with them).
         {
-          typename SUNDIALS::KINSOL<Vector<double>>::AdditionalData
+          typename kinsol::AdditionalData
             additional_data;
           additional_data.function_tolerance = target_tolerance;
 
           // Important to specify strategy for the nonlinear solver
-          SUNDIALS::KINSOL<Vector<double>>::AdditionalData::SolutionStrategy strategy;
+          SUNDIALS::KINSOL<Vector<double>>::AdditionalData::
+            SolutionStrategy strategy;
           if (solver_type == 0)
           {
             // This is the default but we put it here anyway for fun
-            strategy = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::linesearch;
+            strategy = SUNDIALS::KINSOL<Vector<double>>::
+              AdditionalData::linesearch;
           }
           else if (solver_type == 1)
           {
             // Newton
-            strategy  = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::newton;
+            strategy = SUNDIALS::KINSOL<Vector<double>>::
+              AdditionalData::newton;
           }
           else if (solver_type == 2)
           {
             // Picard
-            strategy  = SUNDIALS::KINSOL<Vector<double>>::AdditionalData::picard;
+            strategy = kinsol::
+              AdditionalData::picard;
 
             additional_data.anderson_subspace_size = AA_size;
           }
           additional_data.strategy = strategy;
 
-          SUNDIALS::KINSOL<Vector<double>> nonlinear_solver(additional_data);
+          SUNDIALS::KINSOL<Vector<double>> nonlinear_solver(additional_data,
+                                                             mpi_communicator);
 
           // Then we have to describe the operations that were already mentioned
           // in the introduction. In essence, we have to teach KINSOL how to (i)
@@ -676,17 +781,19 @@ namespace Step77
 
         computing_timer.print_summary();
 
-        std::cout << std::endl;
+        pcout << std::endl;
       }
   }
 } // namespace Step77
 
 
-int main()
+int main(int argc, char *argv[])
 {
   try
     {
       using namespace Step77;
+
+      Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
       MinimalSurfaceProblem<2> laplace_problem_2d;
       laplace_problem_2d.run();
