@@ -89,6 +89,7 @@ namespace Step57
     void run(const int m, unsigned int &picard_iter, double Re);
 
   private:
+
     void setup_dofs();
 
     void initialize_system();
@@ -138,9 +139,13 @@ namespace Step57
     BlockSparsityPattern      sparsity_pattern;
     SparsityPattern           sparsity_pattern_nb;
     BlockSparseMatrix<double> system_matrix;
-    //BlockSparseMatrix<double> system_stiff_matrix;
-    SparseMatrix<double>      system_stiff_matrix;
+    //BlockSparseMatrix<double> system_norm_matrix;
+    SparseMatrix<double>      system_norm_matrix;
     SparseMatrix<double>      pressure_mass_matrix;
+
+    int AA_norm = 0; // 0 - l^2 norm (identity matrix)
+                     // 1 - L^2 norm (mass matrix)
+                     // 2 - H^1 norm (stiffness matrix)
 
     BlockVector<double> present_solution;
     BlockVector<double> newton_update;
@@ -296,7 +301,7 @@ namespace Step57
   void StationaryNavierStokes<dim>::setup_dofs()
   {
     system_matrix.clear();
-    system_stiff_matrix.clear();
+    system_norm_matrix.clear();
     pressure_mass_matrix.clear();
 
     // The first step is to associate DoFs with a given mesh.
@@ -368,7 +373,7 @@ namespace Step57
     }
 
     system_matrix.reinit(sparsity_pattern);
-    system_stiff_matrix.reinit(sparsity_pattern_nb);
+    system_norm_matrix.reinit(sparsity_pattern_nb);
 
     present_solution.reinit(dofs_per_block);
     newton_update.reinit(dofs_per_block);
@@ -390,7 +395,7 @@ namespace Step57
     if (assemble_matrix)
     {
       system_matrix = 0;
-      system_stiff_matrix = 0;
+      system_norm_matrix = 0;
     }
 
     system_rhs = 0;
@@ -409,7 +414,7 @@ namespace Step57
     const FEValuesExtractors::Scalar pressure(dim);
 
     FullMatrix<double> local_matrix(dofs_per_cell, dofs_per_cell);
-    FullMatrix<double> local_stiff_matrix(dofs_per_cell, dofs_per_cell);
+    FullMatrix<double> local_norm_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double>     local_rhs(dofs_per_cell);
 
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
@@ -432,7 +437,7 @@ namespace Step57
         fe_values.reinit(cell);
 
         local_matrix = 0;
-        local_stiff_matrix = 0;
+        local_norm_matrix = 0;
         local_rhs    = 0;
 
         fe_values[velocities].get_function_values(evaluation_point,
@@ -493,11 +498,20 @@ namespace Step57
                              phi_p[i] * phi_p[j]) *
                             fe_values.JxW(q);
 
-                          // We need the mass matrix so we calculate it separately
-                          local_stiff_matrix(i, j) +=
-                          (viscosity *
-                            scalar_product(grad_phi_u[j], grad_phi_u[i])) *
-                          fe_values.JxW(q);
+                          // For the norm and inner product in the AA step
+                          if (AA_norm == 1)
+                          {
+                            // Mass matrix
+                            local_norm_matrix(i, j) +=
+                              phi_u[j] * phi_u[i] * fe_values.JxW(q);
+                          }
+                          else if (AA_norm == 2)
+                          {
+                            // Stiffness matrix
+                            local_norm_matrix(i, j) +=
+                              scalar_product(grad_phi_u[j], grad_phi_u[i]) *
+                            fe_values.JxW(q);
+                          }
 
                       }
                   }
@@ -541,9 +555,9 @@ namespace Step57
                                                         system_rhs);
 
 
-            constraints_used.distribute_local_to_global(local_stiff_matrix,
+            constraints_used.distribute_local_to_global(local_norm_matrix,
                                                         local_dof_indices,
-                                                        system_stiff_matrix);
+                                                        system_norm_matrix);
           }
         else
           {
@@ -566,7 +580,6 @@ namespace Step57
         // whole system matrix will have rows that are completely
         // zero. Luckily, FGMRES handles these rows without any problem.
         system_matrix.block(1, 1) = 0;
-        //system_stiff_matrix.block(1, 1) = 0;
       }
   }
 
@@ -958,17 +971,28 @@ namespace Step57
         // alpha = -(w_{k+1} - w_k, w_k)_X / ||w_{k+1}-w_k||_X^2
         Vector<double> res_diff(dof_handler.n_dofs());
         Vector<double> res_prev(dof_handler.n_dofs());
-
-        for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
-        {
-          res_diff(i) = F(i,0) - F(i,1);
-          res_prev(i) = F(i,1);
-        }
-
         double numerator;
         double denominator;
-        numerator = system_stiff_matrix.matrix_scalar_product(res_diff,res_prev);
-        denominator = system_stiff_matrix.matrix_norm_square(res_diff);
+
+        if (AA_norm == 0)
+        {
+          for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+          {
+            numerator += (F(i,0) - F(i,1)) * F(i,1);
+            denominator += (F(i,0) - F(i,1)) * (F(i,0) - F(i,1));
+          }
+        }
+        else
+        {
+          for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+          {
+            res_diff(i) = F(i,0) - F(i,1);
+            res_prev(i) = F(i,1);
+          }
+          numerator = system_norm_matrix.matrix_scalar_product(res_diff,res_prev);
+          denominator = system_norm_matrix.matrix_norm_square(res_diff);
+        }
+
         alpha(0) = -numerator / denominator;
         alpha(1) = 1 - alpha(0);
 
@@ -1029,23 +1053,32 @@ namespace Step57
 
         Fhat_Sparse.copy_from(Fhat);
 
+        Vector<double> y1_Sparse(dof_handler.n_dofs());
+        Vector<double> y2_Sparse(m);
+
         // This follows the crackhead-like work that I did on the table.
         // Essentially we calculate this quantity:
         // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
+        // If we're using the l^2 norm, then we get
+        // alpha_hat = -inv(Fhat' * Fhat) * Fhat' * F_rhs
 
-        // Here we calculate Fhat' * M * Fhat
-        system_stiff_matrix.mmult(MFhat_Sparse,Fhat_Sparse); // M * Fhat
-        Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * M * Fhat
+        if (AA_norm == 0)
+        {
+          // Fhat' * Fhat
+          Fhat_Sparse.Tmmult(trip_Sparse,Fhat_Sparse);
 
-        // NOTE: The code would be optimized if we could somehow define the
-        // sparsity pattern before these multiplications. That way we're not
-        // rewriting the sparsity patterns
+          // Fhat' * F_rhs
+          Fhat_Sparse.Tvmult(y2_Sparse,F_m);
+        }
+        else
+        {
+          // Fhat' * M * Fhat
+          system_norm_matrix.mmult(MFhat_Sparse,Fhat_Sparse); // M * Fhat
+          Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * (M * Fhat)
 
-        Vector<double> y1_Sparse(dof_handler.n_dofs());
-        Vector<double> y2_Sparse(m);
-        system_stiff_matrix.vmult(y1_Sparse,F_m);
-        Fhat_Sparse.Tvmult(y2_Sparse,y1_Sparse);
-
+          system_norm_matrix.vmult(y1_Sparse,F_m);
+          Fhat_Sparse.Tvmult(y2_Sparse,y1_Sparse);
+        }
         // Creating the solver
         SparseDirectUMFPACK AA_direct;
         AA_direct.solve(trip_Sparse, y2_Sparse);
@@ -1242,8 +1275,8 @@ int main()
     // Creating vectors to store things in and print them at the end
     std::vector<double> iterations;
     std::vector<double> time;
-    std::vector<int> Re = {1000};
-    std::vector<int> m = {0, 1, 2, 10};
+    std::vector<int> Re = {100};
+    std::vector<int> m = {2};
 
     // quantities we need to run the code.
     unsigned int picard_iter;
