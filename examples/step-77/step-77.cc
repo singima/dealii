@@ -95,7 +95,7 @@ namespace Step77
 {
   using namespace dealii;
 
-  using kinsol = SUNDIALS::KINSOL<Vector<double>>;
+  using kinsol = SUNDIALS::KINSOL<LA::MPI::Vector>;
 
   // @sect3{The <code>MinimalSurfaceProblem</code> class template}
 
@@ -128,15 +128,17 @@ namespace Step77
 
   private:
     void setup_system(const bool initial_step);
-    void solve(const Vector<double> &rhs,
-               Vector<double> &      solution,
-               const double          tolerance);
+    void solve(const LA::MPI::Vector &rhs,
+               LA::MPI::Vector &      solution,
+               const double           tolerance,
+               const bool            &initial_step);
     void refine_mesh();
     void output_results(const unsigned int refinement_cycle);
     void set_boundary_values();
-    void compute_and_factorize_jacobian(const Vector<double> &evaluation_point);
-    void compute_residual(const Vector<double> &evaluation_point,
-                          Vector<double> &      residual);
+    void compute_and_factorize_jacobian(const bool &initial_step,
+                                        const LA::MPI::Vector &evaluation_point);
+    void compute_residual(const LA::MPI::Vector &evaluation_point,
+                          LA::MPI::Vector &      residual);
 
     MPI_Comm mpi_communicator;
 
@@ -153,12 +155,10 @@ namespace Step77
     TimerOutput computing_timer;
     // End of MPI added stuff
 
-    AffineConstraints<double> hanging_node_constraints;
+    AffineConstraints<double> nonzero_constraints;
+    AffineConstraints<double> zero_constraints;
 
-    // TIMO: remove this
-    SparsityPattern                      sparsity_pattern;
-
-    LA::MPI::SparseMatrix<double>                 jacobian_matrix;
+    LA::MPI::SparseMatrix                 jacobian_matrix;
     //std::unique_ptr<SparseDirectUMFPACK> jacobian_matrix_factorization;
 
     LA::MPI::Vector current_solution;
@@ -228,20 +228,43 @@ namespace Step77
         current_solution.reinit(dof_handler.n_dofs(), mpi_communicator);
 
         // Added because MPI
-        locally_owned_dofs = dof_handler.locally_owned_dofs();
-        locally_relevant_dofs =
-          DoFTools::extract_locally_relevant_dofs(dof_handler);
-
-        locally_relevant_solution.reinit(locally_owned_dofs,
-                                         locally_relevant_dofs,
-                                         mpi_communicator);
-        system_rhs.reinit(locally_owned_dofs, mpi_communicator);
+        // locally_owned_dofs = dof_handler.locally_owned_dofs();
+        // locally_relevant_dofs =
+        //   DoFTools::extract_locally_relevant_dofs(dof_handler);
+        //
+        // locally_relevant_solution.reinit(locally_owned_dofs,
+        //                                  locally_relevant_dofs,
+        //                                  mpi_communicator);
+        // system_rhs.reinit(locally_owned_dofs, mpi_communicator);
         // End of MPI stuff
 
-        hanging_node_constraints.clear();
-        DoFTools::make_hanging_node_constraints(dof_handler,
-                                                hanging_node_constraints);
-        hanging_node_constraints.close();
+        const FEValuesExtractors::Vector velocities(0);
+
+        // nonzero constraint section
+        {
+          nonzero_constraints.clear();
+          DoFTools::make_hanging_node_constraints(dof_handler,
+                                                  nonzero_constraints);
+          VectorTools::interpolate_boundary_values(dof_handler,
+                                                   0,
+                                                   BoundaryValues<dim>(),
+                                                   nonzero_constraints,
+                                                   fe.component_mask(velocities));
+        }
+        nonzero_constraints.close();
+
+        // zero constraint section
+        {
+          zero_constraints.clear();
+          DoFTools::make_hanging_node_constraints(dof_handler, zero_constraints);
+          VectorTools::interpolate_boundary_values(
+                      dof_handler,
+                      0,
+                      Functions::ZeroFunction<dim>(),
+                      zero_constraints,
+                      fe.component_mask(velocities));
+        }
+        zero_constraints.close();
       }
 
     //DynamicSparsityPattern dsp(dof_handler.n_dofs());
@@ -249,7 +272,7 @@ namespace Step77
 
     //DoFTools::make_sparsity_pattern(dof_handler, dsp);
     DoFTools::make_sparsity_pattern(dof_handler, dsp,
-                                    hanging_node_constraints, false);
+                                    nonzero_constraints, false);
 
     // Included for MPI
     SparsityTools::distribute_sparsity_pattern(dsp,
@@ -257,11 +280,13 @@ namespace Step77
                                                mpi_communicator,
                                                locally_relevant_dofs);
 
-    hanging_node_constraints.condense(dsp);
+    //nonzero_constraints.condense(dsp);
 
 
-    sparsity_pattern.copy_from(dsp);     // TIMO remove
-    jacobian_matrix.reinit(sparsity_pattern); // mpi_communicator...?
+    jacobian_matrix.reinit(locally_owned_dofs,
+                           locally_owned_dofs,
+                           dsp,
+                           mpi_communicator);
     //jacobian_matrix_factorization.reset();
   }
 
@@ -281,7 +306,8 @@ namespace Step77
   // function after the matching closing brace `}`.
   template <int dim>
   void MinimalSurfaceProblem<dim>::compute_and_factorize_jacobian(
-    const Vector<double> &evaluation_point)
+    const bool &initial_step,
+    const LA::MPI::Vector &evaluation_point)
   {
         // TIMO : evaluation point with ghost values
 
@@ -311,73 +337,66 @@ namespace Step77
 
       for (const auto &cell : dof_handler.active_cell_iterators())
         {
-              // TIMO if locally owned
+          if (cell->is_locally_owned())
+          {
+            cell_matrix = 0;
 
-          cell_matrix = 0;
+            fe_values.reinit(cell);
 
-          fe_values.reinit(cell);
+            fe_values.get_function_gradients(evaluation_point,
+                                             evaluation_point_gradients);
 
-          fe_values.get_function_gradients(evaluation_point,
-                                           evaluation_point_gradients);
+            for (unsigned int q = 0; q < n_q_points; ++q)
+              {
+                const double coeff =
+                  1.0 / std::sqrt(1 + evaluation_point_gradients[q] *
+                                        evaluation_point_gradients[q]);
 
-          for (unsigned int q = 0; q < n_q_points; ++q)
-            {
-              const double coeff =
-                1.0 / std::sqrt(1 + evaluation_point_gradients[q] *
-                                      evaluation_point_gradients[q]);
-
-              for (unsigned int i = 0; i < dofs_per_cell; ++i)
-                {
-                  for (unsigned int j = 0; j < dofs_per_cell; ++j)
-                  if (solver_type == 0 || solver_type == 1)
+                for (unsigned int i = 0; i < dofs_per_cell; ++i)
                   {
-                    // Newton iteration (or Newton w/ linesearch)
-                    cell_matrix(i, j) +=
-                      (((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
-                         * coeff                       //   * a_n
-                         * fe_values.shape_grad(j, q)) //   * \nabla \phi_j)
-                        -                              //  -
-                        (fe_values.shape_grad(i, q)    //  (\nabla \phi_i
-                         * coeff * coeff * coeff       //   * a_n^3
-                         *
-                         (fe_values.shape_grad(j, q)       //   * (\nabla \phi_j
-                          * evaluation_point_gradients[q]) //      * \nabla u_n)
-                         * evaluation_point_gradients[q])) //   * \nabla u_n)))
-                       * fe_values.JxW(q));                // * dx
-                    }
-                    else if (solver_type == 2)
+                    for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                    if (solver_type == 0 || solver_type == 1)
                     {
-                      // Picard iteration
+                      // Newton iteration (or Newton w/ linesearch)
                       cell_matrix(i, j) +=
-                        ((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
+                        (((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
                            * coeff                       //   * a_n
-                           * fe_values.shape_grad(j, q)) //   * \nabla u_n)))
+                           * fe_values.shape_grad(j, q)) //   * \nabla \phi_j)
+                          -                              //  -
+                          (fe_values.shape_grad(i, q)    //  (\nabla \phi_i
+                           * coeff * coeff * coeff       //   * a_n^3
+                           *
+                           (fe_values.shape_grad(j, q)       //   * (\nabla \phi_j
+                            * evaluation_point_gradients[q]) //      * \nabla u_n)
+                           * evaluation_point_gradients[q])) //   * \nabla u_n)))
                          * fe_values.JxW(q));                // * dx
-                    }
-                }
-            }
+                      }
+                      else if (solver_type == 2)
+                      {
+                        // Picard iteration
+                        cell_matrix(i, j) +=
+                          ((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
+                             * coeff                       //   * a_n
+                             * fe_values.shape_grad(j, q)) //   * \nabla u_n)))
+                           * fe_values.JxW(q));                // * dx
+                      }
+                  }
+              }
 
-          cell->get_dof_indices(local_dof_indices);
-          hanging_node_constraints.distribute_local_to_global(cell_matrix,
-                                                              local_dof_indices,
-                                                              jacobian_matrix);
+            cell->get_dof_indices(local_dof_indices);
+
+            const AffineConstraints<double> &constraints_used =
+              initial_step ? nonzero_constraints : zero_constraints;
+
+            constraints_used.distribute_local_to_global(cell_matrix,
+                                                        local_dof_indices,
+                                                        jacobian_matrix);
+
+          }
         }
 
-// TIMO  need to go into AffineConstraints, then remove all this
-// use ZERO boundary conditions!
-      /*std::map<types::global_dof_index, double> boundary_values;
-      VectorTools::interpolate_boundary_values(dof_handler,
-                                               0,
-                                               Functions::ZeroFunction<dim>(),
-                                               boundary_values);
-      Vector<double> dummy_solution(dof_handler.n_dofs());
-      Vector<double> dummy_rhs(dof_handler.n_dofs());
-
-      MatrixTools::apply_boundary_values(boundary_values,
-                                         jacobian_matrix,
-                                         dummy_solution,
-                                         dummy_rhs);*/
-
+        // TIMO  need to go into AffineConstraints, then remove all this
+        // SEAN: I think I did this...
     }
 
     // The second half of the function then deals with factorizing the
@@ -428,8 +447,8 @@ namespace Step77
   // way for us to follow along the progress of the program.
   template <int dim>
   void MinimalSurfaceProblem<dim>::compute_residual(
-    const Vector<double> &evaluation_point,
-    Vector<double> &      residual)
+    const LA::MPI::Vector &evaluation_point,
+    LA::MPI::Vector &      residual)
   {
     TimerOutput::Scope t(computing_timer, "assembling the residual");
 
@@ -450,37 +469,40 @@ namespace Step77
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
     for (const auto &cell : dof_handler.active_cell_iterators())
-      {// TIMO locally owned
-        cell_residual = 0;
-        fe_values.reinit(cell);
+      {
+        if (cell->is_locally_owned())
+        {
+          cell_residual = 0;
+          fe_values.reinit(cell);
 
-        fe_values.get_function_gradients(evaluation_point,
-                                         evaluation_point_gradients);
+          fe_values.get_function_gradients(evaluation_point,
+                                           evaluation_point_gradients);
 
 
-        for (unsigned int q = 0; q < n_q_points; ++q)
-          {
-            const double coeff =
-              1.0 / std::sqrt(1 + evaluation_point_gradients[q] *
-                                    evaluation_point_gradients[q]);
+          for (unsigned int q = 0; q < n_q_points; ++q)
+            {
+              const double coeff =
+                1.0 / std::sqrt(1 + evaluation_point_gradients[q] *
+                                      evaluation_point_gradients[q]);
 
-            for (unsigned int i = 0; i < dofs_per_cell; ++i)
-              cell_residual(i) =
-                (fe_values.shape_grad(i, q)      // \nabla \phi_i
-                 * coeff                         // * a_n
-                 * evaluation_point_gradients[q] // * \nabla u_n
-                 * fe_values.JxW(q));            // * dx
-          }
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                cell_residual(i) =
+                  (fe_values.shape_grad(i, q)      // \nabla \phi_i
+                   * coeff                         // * a_n
+                   * evaluation_point_gradients[q] // * \nabla u_n
+                   * fe_values.JxW(q));            // * dx
+            }
 
-        cell->get_dof_indices(local_dof_indices);
-        for (unsigned int i = 0; i < dofs_per_cell; ++i)
-          residual(local_dof_indices[i]) += cell_residual(i);
+          cell->get_dof_indices(local_dof_indices);
+          for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            residual(local_dof_indices[i]) += cell_residual(i);
+        }
       }
 
-    //hanging_node_constraints.condense(residual);
+    //constraints.condense(residual);
 
 // TIMO maybe?
-hanging_node_constraints.set_zero(residual);
+nonzero_constraints.set_zero(residual);
 
     // for (const types::global_dof_index i :
     //      DoFTools::extract_boundary_dofs(dof_handler))
@@ -513,18 +535,22 @@ hanging_node_constraints.set_zero(residual);
   // iterative solver, we are not using this opportunity to solve linear systems
   // only inexactly.
   template <int dim>
-  void MinimalSurfaceProblem<dim>::solve(const Vector<double> &rhs,
-                                         Vector<double> &      solution,
-                                         const double /*tolerance*/)
+  void MinimalSurfaceProblem<dim>::solve(const LA::MPI::Vector &rhs,
+                                         LA::MPI::Vector &      solution,
+                                         const double /*tolerance*/,
+                                         const bool &initial_step)
   {
     TimerOutput::Scope t(computing_timer, "linear system solve");
+
+    const AffineConstraints<double> &constraints_used =
+      initial_step ? nonzero_constraints : zero_constraints;
 
     pcout << "  Solving linear system" << std::endl;
 
 
     //jacobian_matrix_factorization->vmult(solution, rhs);
 
-    hanging_node_constraints.distribute(solution);
+    constraints_used.distribute(solution);
   }
 
 
@@ -560,21 +586,21 @@ hanging_node_constraints.set_zero(residual);
 
     dof_handler.distribute_dofs(fe);
 
-    Vector<double> tmp(dof_handler.n_dofs());
+    LA::MPI::Vector tmp(dof_handler.n_dofs());
     solution_transfer.interpolate(current_solution, tmp);
     current_solution = std::move(tmp);
 
-    hanging_node_constraints.clear();
+    constraints.clear();
 
-    DoFTools::make_hanging_node_constraints(dof_handler,
-                                            hanging_node_constraints);
-    hanging_node_constraints.close();
+    DoFTools::make_constraints(dof_handler,
+                                            constraints);
+    constraints.close();
 
-    hanging_node_constraints.distribute(current_solution);
+    constraints.distribute(current_solution);
 
     set_boundary_values();
 
-    setup_system(/*initial_step=false);
+    setup_system(initial_step=false);
     */
   }
 
@@ -585,6 +611,7 @@ hanging_node_constraints.set_zero(residual);
   {
     // TIMO  need a zero constraints and nonzero constraints object/
     // like in step-57
+    // SEAN: I think this is ok
     // std::map<types::global_dof_index, double> boundary_values;
     // VectorTools::interpolate_boundary_values(dof_handler,
     //                                          0,
@@ -593,7 +620,7 @@ hanging_node_constraints.set_zero(residual);
     // for (const auto &boundary_value : boundary_values)
     //   current_solution(boundary_value.first) = boundary_value.second;
     //
-    // hanging_node_constraints.distribute(current_solution);
+    // constraints.distribute(current_solution);
   }
 
 
@@ -652,8 +679,10 @@ hanging_node_constraints.set_zero(residual);
     GridGenerator::hyper_ball(triangulation);
     triangulation.refine_global(2);
 
-    setup_system(/*initial_step=*/true);
-    set_boundary_values();
+    const bool initial_step = true;
+
+    setup_system(initial_step);
+    //set_boundary_values();
 
     for (unsigned int refinement_cycle = 0; refinement_cycle < 1;
          ++refinement_cycle)
@@ -679,32 +708,27 @@ hanging_node_constraints.set_zero(residual);
           additional_data.function_tolerance = target_tolerance;
 
           // Important to specify strategy for the nonlinear solver
-          SUNDIALS::KINSOL<Vector<double>>::AdditionalData::
-            SolutionStrategy strategy;
+          kinsol::AdditionalData::SolutionStrategy strategy;
           if (solver_type == 0)
           {
             // This is the default but we put it here anyway for fun
-            strategy = SUNDIALS::KINSOL<Vector<double>>::
-              AdditionalData::linesearch;
+            strategy = kinsol::AdditionalData::linesearch;
           }
           else if (solver_type == 1)
           {
             // Newton
-            strategy = SUNDIALS::KINSOL<Vector<double>>::
-              AdditionalData::newton;
+            strategy = kinsol::AdditionalData::newton;
           }
           else if (solver_type == 2)
           {
             // Picard
-            strategy = kinsol::
-              AdditionalData::picard;
+            strategy = kinsol::AdditionalData::picard;
 
             additional_data.anderson_subspace_size = AA_size;
           }
           additional_data.strategy = strategy;
 
-          SUNDIALS::KINSOL<Vector<double>> nonlinear_solver(additional_data,
-                                                             mpi_communicator);
+          kinsol nonlinear_solver(additional_data, mpi_communicator);
 
           // Then we have to describe the operations that were already mentioned
           // in the introduction. In essence, we have to teach KINSOL how to (i)
@@ -740,32 +764,32 @@ hanging_node_constraints.set_zero(residual);
           // 'residual', 'setup_jacobian', and 'solve_jacobian_system' functions
           // will then print output to screen that allows us to follow along
           // with the progress of the program.
-          nonlinear_solver.reinit_vector = [&](Vector<double> &x) {
+          nonlinear_solver.reinit_vector = [&](LA::MPI::Vector &x) {
             x.reinit(dof_handler.n_dofs());
           };
 
           // Newton iteration
 
           nonlinear_solver.residual =
-            [&](const Vector<double> &evaluation_point,
-                Vector<double> &      residual) {
+            [&](const LA::MPI::Vector &evaluation_point,
+                LA::MPI::Vector &      residual) {
               compute_residual(evaluation_point, residual);
 
               return 0;
             };
 
           nonlinear_solver.setup_jacobian =
-            [&](const Vector<double> &current_u,
-                const Vector<double> & /*current_f*/) {
-              compute_and_factorize_jacobian(current_u);
+            [&](const LA::MPI::Vector &current_u,
+                const LA::MPI::Vector & /*current_f*/) {
+              compute_and_factorize_jacobian(initial_step, current_u);
 
               return 0;
             };
 
-          nonlinear_solver.solve_with_jacobian = [&](const Vector<double> &rhs,
-                                                     Vector<double> &      dst,
+          nonlinear_solver.solve_with_jacobian = [&](const LA::MPI::Vector &rhs,
+                                                     LA::MPI::Vector &      dst,
                                                      const double tolerance) {
-            this->solve(rhs, dst, tolerance);
+            this->solve(rhs, dst, tolerance, initial_step);
 
             return 0;
           };
