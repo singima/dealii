@@ -225,7 +225,9 @@ namespace Step77
     if (initial_step)
       {
         dof_handler.distribute_dofs(fe);
-        current_solution.reinit(dof_handler.n_dofs(), mpi_communicator);
+        current_solution.reinit(locally_owned_dofs,
+                                locally_relevant_dofs,
+                                mpi_communicator);
 
         // Added because MPI
         // locally_owned_dofs = dof_handler.locally_owned_dofs();
@@ -339,7 +341,7 @@ namespace Step77
         {
           if (cell->is_locally_owned())
           {
-            cell_matrix = 0;
+            cell_matrix = 0.;
 
             fe_values.reinit(cell);
 
@@ -765,7 +767,10 @@ nonzero_constraints.set_zero(residual);
           // will then print output to screen that allows us to follow along
           // with the progress of the program.
           nonlinear_solver.reinit_vector = [&](LA::MPI::Vector &x) {
-            x.reinit(dof_handler.n_dofs());
+            //x.reinit(dof_handler.n_dofs(), mpi_communicator);
+            x.reinit(locally_owned_dofs,
+                     locally_relevant_dofs,
+                     mpi_communicator);
           };
 
           // Newton iteration
