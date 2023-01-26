@@ -145,7 +145,8 @@ namespace Step77
     parallel::distributed::Triangulation<dim> triangulation;
 
     DoFHandler<dim> dof_handler;
-    FE_Q<dim>       fe;
+    FE_Q<dim>       fe; 
+
 
     // Added MPI stuff
     IndexSet locally_owned_dofs;
@@ -225,33 +226,35 @@ namespace Step77
     if (initial_step)
       {
         dof_handler.distribute_dofs(fe);
+
+                // Added because MPI
+        locally_owned_dofs = dof_handler.locally_owned_dofs();
+        locally_relevant_dofs =
+          DoFTools::extract_locally_relevant_dofs(dof_handler);
+
+
         current_solution.reinit(locally_owned_dofs,
                                 locally_relevant_dofs,
                                 mpi_communicator);
-
-        // Added because MPI
-        // locally_owned_dofs = dof_handler.locally_owned_dofs();
-        // locally_relevant_dofs =
-        //   DoFTools::extract_locally_relevant_dofs(dof_handler);
-        //
+        
         // locally_relevant_solution.reinit(locally_owned_dofs,
         //                                  locally_relevant_dofs,
         //                                  mpi_communicator);
         // system_rhs.reinit(locally_owned_dofs, mpi_communicator);
         // End of MPI stuff
 
-        const FEValuesExtractors::Vector velocities(0);
-
         // nonzero constraint section
         {
+
           nonzero_constraints.clear();
           DoFTools::make_hanging_node_constraints(dof_handler,
                                                   nonzero_constraints);
+
+          // Problem right here
           VectorTools::interpolate_boundary_values(dof_handler,
                                                    0,
                                                    BoundaryValues<dim>(),
-                                                   nonzero_constraints,
-                                                   fe.component_mask(velocities));
+                                                   nonzero_constraints);
         }
         nonzero_constraints.close();
 
@@ -263,8 +266,7 @@ namespace Step77
                       dof_handler,
                       0,
                       Functions::ZeroFunction<dim>(),
-                      zero_constraints,
-                      fe.component_mask(velocities));
+                      zero_constraints);
         }
         zero_constraints.close();
       }
@@ -400,6 +402,8 @@ namespace Step77
         // TIMO  need to go into AffineConstraints, then remove all this
         // SEAN: I think I did this...
     }
+
+    jacobian_matrix.compress(VectorOperation::add);
 
     // The second half of the function then deals with factorizing the
     // so-computed matrix. To do this, we first create a new SparseDirectUMFPACK
