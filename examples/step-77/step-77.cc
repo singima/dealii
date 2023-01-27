@@ -401,6 +401,8 @@ namespace Step77
 
         // TIMO  need to go into AffineConstraints, then remove all this
         // SEAN: I think I did this...
+        // Update 1/26: Timo explained ghost vectors, maybe try using a place
+        // holder variable to counteract the ghost value complaints.
     }
 
     jacobian_matrix.compress(VectorOperation::add);
@@ -505,15 +507,15 @@ namespace Step77
         }
       }
 
-    //constraints.condense(residual);
+    //nonzero_constraints.condense(residual);
 
-// TIMO maybe?
-nonzero_constraints.set_zero(residual);
+    // TIMO maybe?
+    nonzero_constraints.set_zero(residual);
 
     // for (const types::global_dof_index i :
     //      DoFTools::extract_boundary_dofs(dof_handler))
     //   residual(i) = 0;
-    //
+    
     // for (const types::global_dof_index i :
     //      DoFTools::extract_hanging_node_dofs(dof_handler))
     //   residual(i) = 0;
