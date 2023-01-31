@@ -143,7 +143,7 @@ namespace Step57
     SparseMatrix<double>      system_norm_matrix;
     SparseMatrix<double>      pressure_mass_matrix;
 
-    int AA_norm = 0; // 0 - l^2 norm (identity matrix)
+    int AA_norm = 2; // 0 - l^2 norm (identity matrix)
                      // 1 - L^2 norm (mass matrix)
                      // 2 - H^1 norm (stiffness matrix)
 
@@ -1024,6 +1024,7 @@ namespace Step57
         Vector<double> F_m(dof_handler.n_dofs());
 
         FullMatrix<double> Fhat(dof_handler.n_dofs(),m);
+        FullMatrix<double> F1(dof_handler.n_dofs(),m+1); // testing
 
         for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
@@ -1035,27 +1036,112 @@ namespace Step57
           }
         }
 
+        for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+        {
+          for (int j = 0; j < m+1; j++)
+          {
+            F1(i,j) = F(i,j);
+          }
+        }
+
         auto start = high_resolution_clock::now();
 
         // Here we set up sparse matrices for the computations
         SparsityPattern Fhat_sparsity;
         SparsityPattern MFhat_sparsity(dof_handler.n_dofs(),m);
         SparsityPattern trip_sparsity(m,m);
+        SparsityPattern F1_sparsity; // testing
 
         MFhat_sparsity.compress();
         trip_sparsity.compress();
 
         Fhat_sparsity.copy_from(Fhat);
+        F1_sparsity.copy_from(F1); // testing
 
         SparseMatrix<double> Fhat_Sparse(Fhat_sparsity);
         SparseMatrix<double> MFhat_Sparse(MFhat_sparsity);
         SparseMatrix<double> trip_Sparse(trip_sparsity);
+        SparseMatrix<double> F1_Sparse(F1_sparsity); // testing
 
         Fhat_Sparse.copy_from(Fhat);
+        F1_Sparse.copy_from(F1);
 
         Vector<double> y1_Sparse(dof_handler.n_dofs());
         Vector<double> y2_Sparse(m);
 
+        // NEW STUFF
+        // This is using Cholesky
+        // Calculate F^T * M * F, should be small
+        /*
+        SparsityPattern MF_sparsity(dof_handler.n_dofs(),m+1);
+        SparsityPattern FtMF_sparsity(m+1,m+1);
+        MF_sparsity.compress();
+        FtMF_sparsity.compress();
+        SparseMatrix<double> MF_Sparse(MF_sparsity);
+        SparseMatrix<double> FtMF_Sparse(FtMF_sparsity);
+
+        // M * F
+        system_norm_matrix.mmult(MF_Sparse,F1_Sparse);
+        // F^T * (M * F)
+        F1_Sparse.Tmmult(FtMF_Sparse,MF_Sparse);
+
+        FullMatrix<double> FtMF;
+        FullMatrix<double> L;
+        FtMF.copy_from(FtMF_Sparse);
+        for (int i = 0; i < m+1; i++)
+        {
+          for (int j = 0; j < m+1; j++)
+          {
+            std::cout << FtMF(i,j);
+          }
+          std::cout << std::endl;
+        }
+        std::cout << std::endl;
+        L.cholesky(FtMF);
+
+        // Adding the row of ones to the bottom
+        FullMatrix<double> Lhat(m+1,m);
+        for (int i = 0; i < m+1; i++)
+        {
+          for (int j = 0; j < m; j++)
+          {
+            if (i == m)
+              Lhat(i,j) = L(i,j) - L(m,m);
+            else
+              Lhat(i,j) = L(i,j);
+          }
+        }
+
+        FullMatrix<double> LtL(m,m);
+        Lhat.Tmmult(LtL,Lhat); // Lhat^T * Lhat
+
+        SparsityPattern LtL_sparsity;
+        LtL_sparsity.copy_from(LtL);
+        SparseMatrix<double> LtL_Sparse(LtL_sparsity);
+        LtL_Sparse.copy_from(LtL);
+
+        Vector<double> ones(m);
+        for (int i = 0; i < m; i++)
+        {
+          ones(i) = -L(m,m) * (L(m,i) - L(m,m));
+        }
+
+        SparseDirectUMFPACK AA_direct_new;
+        AA_direct_new.solve(LtL_Sparse,ones);
+
+        std::cout << std::endl;
+        std::cout << "Values for alpha (new):" << std::endl;
+        double sum1 = 0;
+        for (int i = 0; i < m; i++)
+        {
+          std::cout << ones(i) << std::endl;
+          sum1 += ones(i);
+        }
+        std::cout << 1 - sum1 << std::endl;
+        std::cout << std::endl;
+        std::cout << "Sum of alphas = " << sum1 << std::endl;
+*/
+        
         // This follows the crackhead-like work that I did on the table.
         // Essentially we calculate this quantity:
         // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
@@ -1088,9 +1174,12 @@ namespace Step57
         for (int i = 0; i < m; i++)
         {
           alpha(i) = -y2_Sparse(i);
+          //alpha(i) = ones(i);
           sum += alpha(i);
         }
         alpha(m) = 1 - sum;
+
+        //alpha = ones;
 
         // Timer end
         auto end = high_resolution_clock::now();
