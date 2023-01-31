@@ -159,7 +159,7 @@ namespace Step77
     AffineConstraints<double> nonzero_constraints;
     AffineConstraints<double> zero_constraints;
 
-    LA::MPI::SparseMatrix                 jacobian_matrix;
+    LA::MPI::SparseMatrix     jacobian_matrix;
     //std::unique_ptr<SparseDirectUMFPACK> jacobian_matrix_factorization;
 
     LA::MPI::Vector current_solution;
@@ -314,6 +314,7 @@ namespace Step77
     const LA::MPI::Vector &evaluation_point)
   {
         // TIMO : evaluation point with ghost values
+        //LA::MPI::Vector evaluation_point_1;
 
     {
 
@@ -772,14 +773,14 @@ namespace Step77
           // 'residual', 'setup_jacobian', and 'solve_jacobian_system' functions
           // will then print output to screen that allows us to follow along
           // with the progress of the program.
+
+          
           nonlinear_solver.reinit_vector = [&](LA::MPI::Vector &x) {
             //x.reinit(dof_handler.n_dofs(), mpi_communicator);
             x.reinit(locally_owned_dofs,
                      locally_relevant_dofs,
                      mpi_communicator);
           };
-
-          // Newton iteration
 
           nonlinear_solver.residual =
             [&](const LA::MPI::Vector &evaluation_point,
@@ -805,6 +806,7 @@ namespace Step77
             return 0;
           };
 
+          // something happening in here
           nonlinear_solver.solve(current_solution);
         }
 
