@@ -1021,10 +1021,12 @@ namespace Step57
         // F_rhs = -F_m
 
         int m = AA_iter - 1;
+
+        auto start = high_resolution_clock::now();
+
         Vector<double> F_m(dof_handler.n_dofs());
 
         FullMatrix<double> Fhat(dof_handler.n_dofs(),m);
-        FullMatrix<double> F1(dof_handler.n_dofs(),m+1); // testing
 
         for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
         {
@@ -1036,111 +1038,25 @@ namespace Step57
           }
         }
 
-        for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
-        {
-          for (int j = 0; j < m+1; j++)
-          {
-            F1(i,j) = F(i,j);
-          }
-        }
-
-        auto start = high_resolution_clock::now();
-
         // Here we set up sparse matrices for the computations
         SparsityPattern Fhat_sparsity;
         SparsityPattern MFhat_sparsity(dof_handler.n_dofs(),m);
         SparsityPattern trip_sparsity(m,m);
-        SparsityPattern F1_sparsity; // testing
 
         MFhat_sparsity.compress();
         trip_sparsity.compress();
 
         Fhat_sparsity.copy_from(Fhat);
-        F1_sparsity.copy_from(F1); // testing
 
         SparseMatrix<double> Fhat_Sparse(Fhat_sparsity);
         SparseMatrix<double> MFhat_Sparse(MFhat_sparsity);
         SparseMatrix<double> trip_Sparse(trip_sparsity);
-        SparseMatrix<double> F1_Sparse(F1_sparsity); // testing
 
         Fhat_Sparse.copy_from(Fhat);
-        F1_Sparse.copy_from(F1);
 
         Vector<double> y1_Sparse(dof_handler.n_dofs());
         Vector<double> y2_Sparse(m);
 
-        // NEW STUFF
-        // This is using Cholesky
-        // Calculate F^T * M * F, should be small
-        /*
-        SparsityPattern MF_sparsity(dof_handler.n_dofs(),m+1);
-        SparsityPattern FtMF_sparsity(m+1,m+1);
-        MF_sparsity.compress();
-        FtMF_sparsity.compress();
-        SparseMatrix<double> MF_Sparse(MF_sparsity);
-        SparseMatrix<double> FtMF_Sparse(FtMF_sparsity);
-
-        // M * F
-        system_norm_matrix.mmult(MF_Sparse,F1_Sparse);
-        // F^T * (M * F)
-        F1_Sparse.Tmmult(FtMF_Sparse,MF_Sparse);
-
-        FullMatrix<double> FtMF;
-        FullMatrix<double> L;
-        FtMF.copy_from(FtMF_Sparse);
-        for (int i = 0; i < m+1; i++)
-        {
-          for (int j = 0; j < m+1; j++)
-          {
-            std::cout << FtMF(i,j);
-          }
-          std::cout << std::endl;
-        }
-        std::cout << std::endl;
-        L.cholesky(FtMF);
-
-        // Adding the row of ones to the bottom
-        FullMatrix<double> Lhat(m+1,m);
-        for (int i = 0; i < m+1; i++)
-        {
-          for (int j = 0; j < m; j++)
-          {
-            if (i == m)
-              Lhat(i,j) = L(i,j) - L(m,m);
-            else
-              Lhat(i,j) = L(i,j);
-          }
-        }
-
-        FullMatrix<double> LtL(m,m);
-        Lhat.Tmmult(LtL,Lhat); // Lhat^T * Lhat
-
-        SparsityPattern LtL_sparsity;
-        LtL_sparsity.copy_from(LtL);
-        SparseMatrix<double> LtL_Sparse(LtL_sparsity);
-        LtL_Sparse.copy_from(LtL);
-
-        Vector<double> ones(m);
-        for (int i = 0; i < m; i++)
-        {
-          ones(i) = -L(m,m) * (L(m,i) - L(m,m));
-        }
-
-        SparseDirectUMFPACK AA_direct_new;
-        AA_direct_new.solve(LtL_Sparse,ones);
-
-        std::cout << std::endl;
-        std::cout << "Values for alpha (new):" << std::endl;
-        double sum1 = 0;
-        for (int i = 0; i < m; i++)
-        {
-          std::cout << ones(i) << std::endl;
-          sum1 += ones(i);
-        }
-        std::cout << 1 - sum1 << std::endl;
-        std::cout << std::endl;
-        std::cout << "Sum of alphas = " << sum1 << std::endl;
-*/
         
         // This follows the crackhead-like work that I did on the table.
         // Essentially we calculate this quantity:
@@ -1179,15 +1095,110 @@ namespace Step57
         }
         alpha(m) = 1 - sum;
 
-        //alpha = ones;
-
         // Timer end
         auto end = high_resolution_clock::now();
 
         // Computational time
         auto duration = duration_cast<microseconds>(end - start);
 
-        std::cout << "AA (m>1) time: " << duration.count() * 1e-6
+        std::cout << "AA old method (m>1) time: " << duration.count() * 1e-6
+                  << " seconds" << std::endl;
+
+        // NEW STUFF
+        // This is using Cholesky
+        // Calculate F^T * M * F, should be small
+        // UPDATE:
+        // This method is correct... however it's slower and what I thought
+        // was incorrect in the old method is actually correct...
+        // So until this thing is faster, the old method is better.
+        auto start_new = high_resolution_clock::now();
+
+        SparsityPattern F_sparsity; 
+        F_sparsity.copy_from(F);
+        SparseMatrix<double> F_Sparse(F_sparsity);
+        F_Sparse.copy_from(F);
+
+        SparsityPattern MF_sparsity(dof_handler.n_dofs(),m+1);
+        SparsityPattern FtMF_sparsity(m+1,m+1);
+        MF_sparsity.compress();
+        FtMF_sparsity.compress();
+        SparseMatrix<double> MF_Sparse(MF_sparsity);
+        SparseMatrix<double> FtMF_Sparse(FtMF_sparsity);
+
+        // M * F
+        system_norm_matrix.mmult(MF_Sparse,F_Sparse);
+        // F^T * (M * F)
+        F_Sparse.Tmmult(FtMF_Sparse,MF_Sparse);
+
+        FullMatrix<double> FtMF;
+        FullMatrix<double> L;
+        FtMF.copy_from(FtMF_Sparse);
+
+        L.cholesky(FtMF);
+
+        FullMatrix<double> R;
+        R.copy_transposed(L);
+
+        // Adding the row of ones to the bottom
+        FullMatrix<double> Rhat(m+1,m);
+        for (int i = 0; i < m+1; i++)
+        {
+          for (int j = 0; j < m; j++)
+          {
+            if (i == 0)
+            {
+              Rhat(i,j) = R(i,j + 1) - R(0,0);
+            }
+            else
+            {
+              Rhat(i,j) = R(i,j + 1);
+            }
+          }
+        }
+
+        FullMatrix<double> RtR(m,m);
+        Rhat.Tmmult(RtR,Rhat); // Rhat^T * Rhat
+
+        SparsityPattern RtR_sparsity;
+        RtR_sparsity.copy_from(RtR);
+        SparseMatrix<double> RtR_Sparse(RtR_sparsity);
+        RtR_Sparse.copy_from(RtR);
+
+        Vector<double> ones(m);
+        for (int i = 0; i < m; i++)
+        {
+          ones(i) = -R(0,0) * (R(0,i + 1) - R(0,0));
+        }
+
+        SparseDirectUMFPACK AA_direct_new;
+        AA_direct_new.solve(RtR_Sparse,ones);
+
+        Vector<double> alpha_new(m+1);
+
+        double sum1 = 0;
+        for (int i = 0; i < m; i++)
+        {
+          sum1 += ones(i);
+          alpha_new(i + 1) = ones(i);
+        }
+
+        alpha_new(0) = 1 - sum1;
+        std::cout << "Values for alpha_new:" << std::endl;
+        std::cout << alpha_new(0) << std::endl;
+        for (int i = 1; i < m + 1; i++)
+        {
+          std::cout << alpha_new(i) << std::endl;
+        }
+        // END OF NEW STUFF
+
+
+        // Timer end
+        auto end_new = high_resolution_clock::now();
+
+        // Computational time
+        auto duration_new = duration_cast<microseconds>(end_new - start_new);
+
+        std::cout << "AA new (m>1) time: " << duration_new.count() * 1e-6
                   << " seconds" << std::endl;
       }
 
@@ -1316,7 +1327,7 @@ namespace Step57
                                         double Re)
   {
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(5);
+    triangulation.refine_global(6);
 
     viscosity = 1.0 / Re;
 
@@ -1365,7 +1376,7 @@ int main()
     std::vector<double> iterations;
     std::vector<double> time;
     std::vector<int> Re = {100};
-    std::vector<int> m = {2};
+    std::vector<int> m = {5};
 
     // quantities we need to run the code.
     unsigned int picard_iter;

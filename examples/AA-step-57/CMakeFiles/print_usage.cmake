@@ -1,8 +1,8 @@
 MESSAGE(
 "###
 #
-#  Project  step-57  set up with  deal.II-10.0.0-pre  found at
-#      /usr/local
+#  Project  step-57  set up with  deal.II-9.5.0-pre  found at
+#      /home/sean/Software/deal.II/installed
 #
 #  CMAKE_BUILD_TYPE:          Debug
 #
