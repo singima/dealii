@@ -234,7 +234,6 @@ namespace Step77
 
 
         current_solution.reinit(locally_owned_dofs,
-                                locally_relevant_dofs,
                                 mpi_communicator);
         
         // locally_relevant_solution.reinit(locally_owned_dofs,
@@ -247,6 +246,7 @@ namespace Step77
         {
 
           nonzero_constraints.clear();
+          nonzero_constraints.reinit(locally_relevant_dofs);
           DoFTools::make_hanging_node_constraints(dof_handler,
                                                   nonzero_constraints);
 
@@ -261,6 +261,7 @@ namespace Step77
         // zero constraint section
         {
           zero_constraints.clear();
+          zero_constraints.reinit(locally_relevant_dofs);
           DoFTools::make_hanging_node_constraints(dof_handler, zero_constraints);
           VectorTools::interpolate_boundary_values(
                       dof_handler,
@@ -314,7 +315,11 @@ namespace Step77
     const LA::MPI::Vector &evaluation_point)
   {
         // TIMO : evaluation point with ghost values
-        //LA::MPI::Vector evaluation_point_1;
+        LA::MPI::Vector evaluation_point_1;
+        evaluation_point_1.reinit(locally_owned_dofs,
+                                  locally_relevant_dofs,
+                                  mpi_communicator);
+        evaluation_point_1 = evaluation_point;
 
     {
 
@@ -463,6 +468,14 @@ namespace Step77
 
     pcout << "  Computing residual vector..." << std::flush;
 
+    // Adding in ghost vector because it can't perform stuff on a
+    // distributed vector.
+    LA::MPI::Vector evaluation_point_1;
+    evaluation_point_1.reinit(locally_owned_dofs,
+                              locally_relevant_dofs,
+                              mpi_communicator);
+    evaluation_point_1 = evaluation_point;
+
     const QGauss<dim> quadrature_formula(fe.degree + 1);
     FEValues<dim>     fe_values(fe,
                             quadrature_formula,
@@ -484,7 +497,7 @@ namespace Step77
           cell_residual = 0;
           fe_values.reinit(cell);
 
-          fe_values.get_function_gradients(evaluation_point,
+          fe_values.get_function_gradients(evaluation_point_1,
                                            evaluation_point_gradients);
 
 
@@ -778,7 +791,6 @@ namespace Step77
           nonlinear_solver.reinit_vector = [&](LA::MPI::Vector &x) {
             //x.reinit(dof_handler.n_dofs(), mpi_communicator);
             x.reinit(locally_owned_dofs,
-                     locally_relevant_dofs,
                      mpi_communicator);
           };
 
