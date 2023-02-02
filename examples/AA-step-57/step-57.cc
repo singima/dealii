@@ -1007,6 +1007,10 @@ namespace Step57
       }
       else
       {
+
+        // New method thanks to Timo
+
+
         // We use this method for m>1
         // Here is the slick method using Fhat
         // Need to verify that when m=1 that this still checks out
@@ -1105,91 +1109,39 @@ namespace Step57
                   << " seconds" << std::endl;
 
         // NEW STUFF
-        // This is using Cholesky
-        // Calculate F^T * M * F, should be small
-        // UPDATE:
-        // This method is correct... however it's slower and what I thought
-        // was incorrect in the old method is actually correct...
-        // So until this thing is faster, the old method is better.
+        // This is using Timo's big brain method
+
+        // Timer start
         auto start_new = high_resolution_clock::now();
 
-        SparsityPattern F_sparsity; 
-        F_sparsity.copy_from(F);
-        SparseMatrix<double> F_Sparse(F_sparsity);
-        F_Sparse.copy_from(F);
 
-        SparsityPattern MF_sparsity(dof_handler.n_dofs(),m+1);
-        SparsityPattern FtMF_sparsity(m+1,m+1);
-        MF_sparsity.compress();
-        FtMF_sparsity.compress();
-        SparseMatrix<double> MF_Sparse(MF_sparsity);
-        SparseMatrix<double> FtMF_Sparse(FtMF_sparsity);
+        // Calculate F^T * M * F
+        // Essentially does FtMF = {<Fhat_i,Fhat_j>_XM}
+        FullMatrix<double> FtMF(m,m);
+        Vector<double> temp(dof_handler.n_dofs());
+        Vector<double> FtM(dof_handler.n_dofs());
+        Vector<double> rhs_new(m);
 
-        // M * F
-        system_norm_matrix.mmult(MF_Sparse,F_Sparse);
-        // F^T * (M * F)
-        F_Sparse.Tmmult(FtMF_Sparse,MF_Sparse);
-
-        FullMatrix<double> FtMF;
-        FullMatrix<double> L;
-        FtMF.copy_from(FtMF_Sparse);
-
-        L.cholesky(FtMF);
-
-        FullMatrix<double> R;
-        R.copy_transposed(L);
-
-        // Adding the row of ones to the bottom
-        FullMatrix<double> Rhat(m+1,m);
-        for (int i = 0; i < m+1; i++)
+        double sum_temp = 0;
+        for (int i = 0; i < m; i++)
         {
-          for (int j = 0; j < m; j++)
+          for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
           {
-            if (i == 0)
-            {
-              Rhat(i,j) = R(i,j + 1) - R(0,0);
-            }
-            else
-            {
-              Rhat(i,j) = R(i,j + 1);
-            }
+            // We want temp to be the ith vector in Fhat
+            temp(j) = Fhat(j,i);
+          }
+
+          // We want to calculate Fhat_i^T * M
+          system_norm_matrix.Tvmult(FtM,temp);
+
+          // While we're here, we calculate the rhs vector
+          for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
+          {
+            // Calculating Fhat_i^T * M * F_m = rhs(i)
+            rhs_new(i) += FtM(j) * F_m(j);
           }
         }
-
-        FullMatrix<double> RtR(m,m);
-        Rhat.Tmmult(RtR,Rhat); // Rhat^T * Rhat
-
-        SparsityPattern RtR_sparsity;
-        RtR_sparsity.copy_from(RtR);
-        SparseMatrix<double> RtR_Sparse(RtR_sparsity);
-        RtR_Sparse.copy_from(RtR);
-
-        Vector<double> ones(m);
-        for (int i = 0; i < m; i++)
-        {
-          ones(i) = -R(0,0) * (R(0,i + 1) - R(0,0));
-        }
-
-        SparseDirectUMFPACK AA_direct_new;
-        AA_direct_new.solve(RtR_Sparse,ones);
-
-        Vector<double> alpha_new(m+1);
-
-        double sum1 = 0;
-        for (int i = 0; i < m; i++)
-        {
-          sum1 += ones(i);
-          alpha_new(i + 1) = ones(i);
-        }
-
-        alpha_new(0) = 1 - sum1;
-        std::cout << "Values for alpha_new:" << std::endl;
-        std::cout << alpha_new(0) << std::endl;
-        for (int i = 1; i < m + 1; i++)
-        {
-          std::cout << alpha_new(i) << std::endl;
-        }
-        // END OF NEW STUFF
+        
 
 
         // Timer end
@@ -1200,6 +1152,9 @@ namespace Step57
 
         std::cout << "AA new (m>1) time: " << duration_new.count() * 1e-6
                   << " seconds" << std::endl;
+
+        // END OF NEW STUFF
+        
       }
 
       std::cout << std::endl;
@@ -1327,7 +1282,7 @@ namespace Step57
                                         double Re)
   {
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(6);
+    triangulation.refine_global(4);
 
     viscosity = 1.0 / Re;
 
