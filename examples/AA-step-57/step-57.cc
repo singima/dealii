@@ -146,6 +146,7 @@ namespace Step57
     int AA_norm = 2; // 0 - l^2 norm (identity matrix)
                      // 1 - L^2 norm (mass matrix)
                      // 2 - H^1 norm (stiffness matrix)
+    int refinement = 4;
 
     BlockVector<double> present_solution;
     BlockVector<double> newton_update;
@@ -1007,10 +1008,6 @@ namespace Step57
       }
       else
       {
-
-        // New method thanks to Timo
-
-
         // We use this method for m>1
         // Here is the slick method using Fhat
         // Need to verify that when m=1 that this still checks out
@@ -1024,12 +1021,11 @@ namespace Step57
         // alpha_hat = [alpha_1, ..., alpha_m-1]
         // F_rhs = -F_m
 
-        int m = AA_iter - 1;
-
         auto start = high_resolution_clock::now();
 
-        Vector<double> F_m(dof_handler.n_dofs());
+        int m = AA_iter - 1;
 
+        Vector<double> F_m(dof_handler.n_dofs());
         FullMatrix<double> Fhat(dof_handler.n_dofs(),m);
 
         for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
@@ -1042,113 +1038,76 @@ namespace Step57
           }
         }
 
-        // Here we set up sparse matrices for the computations
-        SparsityPattern Fhat_sparsity;
-        SparsityPattern MFhat_sparsity(dof_handler.n_dofs(),m);
-        SparsityPattern trip_sparsity(m,m);
-
-        MFhat_sparsity.compress();
-        trip_sparsity.compress();
-
-        Fhat_sparsity.copy_from(Fhat);
-
-        SparseMatrix<double> Fhat_Sparse(Fhat_sparsity);
-        SparseMatrix<double> MFhat_Sparse(MFhat_sparsity);
-        SparseMatrix<double> trip_Sparse(trip_sparsity);
-
-        Fhat_Sparse.copy_from(Fhat);
-
-        Vector<double> y1_Sparse(dof_handler.n_dofs());
-        Vector<double> y2_Sparse(m);
-
-        
-        // This follows the crackhead-like work that I did on the table.
-        // Essentially we calculate this quantity:
-        // alpha_hat = -inv(Fhat' * M * Fhat) * Fhat' * M * F_rhs
-        // If we're using the l^2 norm, then we get
-        // alpha_hat = -inv(Fhat' * Fhat) * Fhat' * F_rhs
+        // Calculate F^T * M * F
+        // Essentially does sym_mat = {<Fhat_i,Fhat_j>_M}
+        FullMatrix<double> sym_mat(m,m);
+        Vector<double> rhs(m);
 
         if (AA_norm == 0)
         {
-          // Fhat' * Fhat
-          Fhat_Sparse.Tmmult(trip_Sparse,Fhat_Sparse);
+          // Calculates Fhat^T * Fhat
+          Fhat.Tmmult(sym_mat,Fhat);
 
-          // Fhat' * F_rhs
-          Fhat_Sparse.Tvmult(y2_Sparse,F_m);
+          // Calculates Fhat^T * F_m
+          F_m *= -1;
+          Fhat.Tvmult(rhs,F_m);
         }
         else
         {
-          // Fhat' * M * Fhat
-          system_norm_matrix.mmult(MFhat_Sparse,Fhat_Sparse); // M * Fhat
-          Fhat_Sparse.Tmmult(trip_Sparse,MFhat_Sparse); // Fhat' * (M * Fhat)
+          Vector<double> temp(dof_handler.n_dofs());
+          Vector<double> FtM(dof_handler.n_dofs());
+          for (int i = 0; i < m; i++)
+          {
+            for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
+            {
+              // We want temp to be the ith vector in Fhat
+              temp(j) = Fhat(j,i);
+            }
 
-          system_norm_matrix.vmult(y1_Sparse,F_m);
-          Fhat_Sparse.Tvmult(y2_Sparse,y1_Sparse);
+            // We want to calculate Fhat_i^T * M
+            system_norm_matrix.Tvmult(FtM,temp);
+
+            // While we're here, we calculate the rhs vector
+            for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
+            {
+              // Calculating Fhat_i^T * M * F_m = rhs(i)
+              rhs(i) -= FtM(j) * F_m(j);
+            }
+
+            // Now for the sym_mat calc
+            for (int j = 0; j < m; j++)
+            {
+              for (unsigned int k = 0; k < dof_handler.n_dofs(); k++)
+              {
+                sym_mat(i,j) += FtM(k) * Fhat(k,j);
+              }
+            }
+          }
         }
-        // Creating the solver
-        SparseDirectUMFPACK AA_direct;
-        AA_direct.solve(trip_Sparse, y2_Sparse);
+        
+        FullMatrix<double> sym_mat_inv(m,m);
+        sym_mat_inv.invert(sym_mat);
+
+        Vector<double> alpha_new(m);
+        sym_mat_inv.vmult(alpha_new,rhs);
+
 
         // Evaluate the implicitly imposed condition on alpha.
         double sum = 0;
         for (int i = 0; i < m; i++)
         {
-          alpha(i) = -y2_Sparse(i);
-          //alpha(i) = ones(i);
+          alpha(i) = alpha_new(i);
           sum += alpha(i);
         }
         alpha(m) = 1 - sum;
+        
+
 
         // Timer end
         auto end = high_resolution_clock::now();
 
         // Computational time
-        auto duration = duration_cast<microseconds>(end - start);
-
-        std::cout << "AA old method (m>1) time: " << duration.count() * 1e-6
-                  << " seconds" << std::endl;
-
-        // NEW STUFF
-        // This is using Timo's big brain method
-
-        // Timer start
-        auto start_new = high_resolution_clock::now();
-
-
-        // Calculate F^T * M * F
-        // Essentially does FtMF = {<Fhat_i,Fhat_j>_XM}
-        FullMatrix<double> FtMF(m,m);
-        Vector<double> temp(dof_handler.n_dofs());
-        Vector<double> FtM(dof_handler.n_dofs());
-        Vector<double> rhs_new(m);
-
-        double sum_temp = 0;
-        for (int i = 0; i < m; i++)
-        {
-          for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
-          {
-            // We want temp to be the ith vector in Fhat
-            temp(j) = Fhat(j,i);
-          }
-
-          // We want to calculate Fhat_i^T * M
-          system_norm_matrix.Tvmult(FtM,temp);
-
-          // While we're here, we calculate the rhs vector
-          for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
-          {
-            // Calculating Fhat_i^T * M * F_m = rhs(i)
-            rhs_new(i) += FtM(j) * F_m(j);
-          }
-        }
-        
-
-
-        // Timer end
-        auto end_new = high_resolution_clock::now();
-
-        // Computational time
-        auto duration_new = duration_cast<microseconds>(end_new - start_new);
+        auto duration_new = duration_cast<microseconds>(end - start);
 
         std::cout << "AA new (m>1) time: " << duration_new.count() * 1e-6
                   << " seconds" << std::endl;
@@ -1282,7 +1241,7 @@ namespace Step57
                                         double Re)
   {
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(4);
+    triangulation.refine_global(refinement);
 
     viscosity = 1.0 / Re;
 
@@ -1330,8 +1289,8 @@ int main()
     // Creating vectors to store things in and print them at the end
     std::vector<double> iterations;
     std::vector<double> time;
-    std::vector<int> Re = {100};
-    std::vector<int> m = {5};
+    std::vector<int> Re = {100, 1000};
+    std::vector<int> m = {3};
 
     // quantities we need to run the code.
     unsigned int picard_iter;
@@ -1387,6 +1346,42 @@ int main()
                   << time[j + m.size() * i] << std::endl;
       }
     }
+
+    std::cout << std::endl;
+    std::cout << "iteration table" << std::endl;
+    std::cout << "\\begin{tabular}{|c||c|c|c|c|}" << std::endl;
+    std::cout << "\\hline\\\\" << std::endl;
+    std::cout << "Time & $m=0$ & $m=1$ & $m=2$ & $m=10$\\\\" << std::endl;
+    std::cout << "\\hline\\\\" << std::endl;
+    for (long unsigned int i = 0; i < Re.size(); i++)
+    {
+      std::cout << "Re = " << Re[i] << " ";
+      for (long unsigned int j = 0; j < m.size(); j++)
+      {
+        std::cout << "& " << iterations[j + m.size() * i] << " ";
+      }
+      std::cout << "\\\\" << std::endl;
+      std::cout << "\\hline\\\\" << std::endl;
+    }
+    std::cout << "\\end{tabular}" << std::endl;
+
+    std::cout << std::endl;
+    std::cout << "time table" << std::endl;
+    std::cout << "\\begin{tabular}{|c||c|c|c|c|}" << std::endl;
+    std::cout << "\\hline\\\\" << std::endl;
+    std::cout << "Time & $m=0$ & $m=1$ & $m=2$ & $m=10$\\\\" << std::endl;
+    std::cout << "\\hline\\\\" << std::endl;
+    for (long unsigned int i = 0; i < Re.size(); i++)
+    {
+      std::cout << "Re = " << Re[i] << " ";
+      for (long unsigned int j = 0; j < m.size(); j++)
+      {
+        std::cout << "& " << time[j + m.size() * i] << " ";
+      }
+      std::cout << "\\\\" << std::endl;
+      std::cout << "\\hline\\\\" << std::endl;
+    }
+    std::cout << "\\end{tabular}" << std::endl;
 
   }
   catch (std::exception &exc)
