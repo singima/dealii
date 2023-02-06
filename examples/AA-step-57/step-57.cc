@@ -396,7 +396,10 @@ namespace Step57
     if (assemble_matrix)
     {
       system_matrix = 0;
-      system_norm_matrix = 0;
+      if (initial_step)
+      {
+        system_norm_matrix = 0;
+      }
     }
 
     system_rhs = 0;
@@ -500,18 +503,21 @@ namespace Step57
                             fe_values.JxW(q);
 
                           // For the norm and inner product in the AA step
-                          if (AA_norm == 1)
+                          if (initial_step)
                           {
-                            // Mass matrix
-                            local_norm_matrix(i, j) +=
-                              phi_u[j] * phi_u[i] * fe_values.JxW(q);
-                          }
-                          else if (AA_norm == 2)
-                          {
-                            // Stiffness matrix
-                            local_norm_matrix(i, j) +=
-                              scalar_product(grad_phi_u[j], grad_phi_u[i]) *
-                            fe_values.JxW(q);
+                            if (AA_norm == 1)
+                            {
+                              // Mass matrix
+                              local_norm_matrix(i, j) +=
+                                phi_u[j] * phi_u[i] * fe_values.JxW(q);
+                            }
+                            else if (AA_norm == 2)
+                            {
+                              // Stiffness matrix
+                              local_norm_matrix(i, j) +=
+                                scalar_product(grad_phi_u[j], grad_phi_u[i]) *
+                              fe_values.JxW(q);
+                            }
                           }
 
                       }
@@ -1350,30 +1356,30 @@ int main()
     std::cout << std::endl;
     std::cout << "iteration table" << std::endl;
     std::cout << "\\begin{tabular}{|c||c|c|c|c|}" << std::endl;
-    std::cout << "\\hline\\\\" << std::endl;
-    std::cout << "Time & $m=0$ & $m=1$ & $m=2$ & $m=10$\\\\" << std::endl;
-    std::cout << "\\hline\\\\" << std::endl;
+    std::cout << "\\hline" << std::endl;
+    std::cout << "Iterations & $m=0$ & $m=1$ & $m=2$ & $m=10$\\\\" << std::endl;
+    std::cout << "\\hline" << std::endl;
     for (long unsigned int i = 0; i < Re.size(); i++)
     {
-      std::cout << "Re = " << Re[i] << " ";
+      std::cout << "$Re = " << Re[i] << "$ ";
       for (long unsigned int j = 0; j < m.size(); j++)
       {
         std::cout << "& " << iterations[j + m.size() * i] << " ";
       }
       std::cout << "\\\\" << std::endl;
-      std::cout << "\\hline\\\\" << std::endl;
+      std::cout << "\\hline" << std::endl;
     }
     std::cout << "\\end{tabular}" << std::endl;
 
     std::cout << std::endl;
-    std::cout << "time table" << std::endl;
+    std::cout << "Time table" << std::endl;
     std::cout << "\\begin{tabular}{|c||c|c|c|c|}" << std::endl;
-    std::cout << "\\hline\\\\" << std::endl;
+    std::cout << "\\hline" << std::endl;
     std::cout << "Time & $m=0$ & $m=1$ & $m=2$ & $m=10$\\\\" << std::endl;
-    std::cout << "\\hline\\\\" << std::endl;
+    std::cout << "\\hline" << std::endl;
     for (long unsigned int i = 0; i < Re.size(); i++)
     {
-      std::cout << "Re = " << Re[i] << " ";
+      std::cout << "$Re = " << Re[i] << "$ ";
       for (long unsigned int j = 0; j < m.size(); j++)
       {
         std::cout << "& " << time[j + m.size() * i] << " ";
