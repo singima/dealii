@@ -138,7 +138,8 @@ namespace Step77
     void compute_and_factorize_jacobian(const bool &initial_step,
                                         const LA::MPI::Vector &evaluation_point);
     void compute_residual(const LA::MPI::Vector &evaluation_point,
-                          LA::MPI::Vector &      residual);
+                          LA::MPI::Vector &      residual,
+                          const bool            &initial_step);
 
     MPI_Comm mpi_communicator;
 
@@ -161,6 +162,7 @@ namespace Step77
 
     LA::MPI::SparseMatrix     jacobian_matrix;
     //std::unique_ptr<SparseDirectUMFPACK> jacobian_matrix_factorization;
+    //std::unique_ptr<LA::MPI::SparseMatrix> jacobian_matrix_factorization;
 
     LA::MPI::Vector current_solution;
 
@@ -227,7 +229,7 @@ namespace Step77
       {
         dof_handler.distribute_dofs(fe);
 
-                // Added because MPI
+        // Added because MPI
         locally_owned_dofs = dof_handler.locally_owned_dofs();
         locally_relevant_dofs =
           DoFTools::extract_locally_relevant_dofs(dof_handler);
@@ -314,15 +316,14 @@ namespace Step77
     const bool &initial_step,
     const LA::MPI::Vector &evaluation_point)
   {
-        // TIMO : evaluation point with ghost values
-        LA::MPI::Vector evaluation_point_1;
-        evaluation_point_1.reinit(locally_owned_dofs,
-                                  locally_relevant_dofs,
-                                  mpi_communicator);
-        evaluation_point_1 = evaluation_point;
+    // TIMO : evaluation point with ghost values
+    LA::MPI::Vector evaluation_point_1;
+    evaluation_point_1.reinit(locally_owned_dofs,
+                              locally_relevant_dofs,
+                              mpi_communicator);
+    evaluation_point_1 = evaluation_point;
 
     {
-
       TimerOutput::Scope t(computing_timer, "assembling the Jacobian");
 
       pcout << "  Computing Jacobian matrix" << std::endl;
@@ -353,7 +354,7 @@ namespace Step77
 
             fe_values.reinit(cell);
 
-            fe_values.get_function_gradients(evaluation_point,
+            fe_values.get_function_gradients(evaluation_point_1,
                                              evaluation_point_gradients);
 
             for (unsigned int q = 0; q < n_q_points; ++q)
@@ -438,6 +439,8 @@ namespace Step77
 // TIMO later
       //jacobian_matrix_factorization = std::make_unique<SparseDirectUMFPACK>();
       //jacobian_matrix_factorization->factorize(jacobian_matrix);
+      //jacobian_matrix_factorization = std::make_unique<LA::MPI::SparseMatrix>();
+      //jacobian_matrix_factorization->factorize(jacobian_matrix);
     }
   }
 
@@ -462,7 +465,8 @@ namespace Step77
   template <int dim>
   void MinimalSurfaceProblem<dim>::compute_residual(
     const LA::MPI::Vector &evaluation_point,
-    LA::MPI::Vector &      residual)
+    LA::MPI::Vector &      residual,
+    const bool &initial_step)
   {
     TimerOutput::Scope t(computing_timer, "assembling the residual");
 
@@ -494,7 +498,7 @@ namespace Step77
       {
         if (cell->is_locally_owned())
         {
-          cell_residual = 0;
+          cell_residual = 0.;
           fe_values.reinit(cell);
 
           fe_values.get_function_gradients(evaluation_point_1,
@@ -516,8 +520,15 @@ namespace Step77
             }
 
           cell->get_dof_indices(local_dof_indices);
-          for (unsigned int i = 0; i < dofs_per_cell; ++i)
-            residual(local_dof_indices[i]) += cell_residual(i);
+          // for (unsigned int i = 0; i < dofs_per_cell; ++i)
+          //   residual(local_dof_indices[i]) += cell_residual(i);
+
+          const AffineConstraints<double> &constraints_used =
+          initial_step ? nonzero_constraints : zero_constraints;
+
+          constraints_used.distribute_local_to_global(cell_residual,
+                                                      local_dof_indices,
+                                                      residual);
         }
       }
 
@@ -525,6 +536,7 @@ namespace Step77
 
     // TIMO maybe?
     nonzero_constraints.set_zero(residual);
+    residual.compress(VectorOperation::add);
 
     // for (const types::global_dof_index i :
     //      DoFTools::extract_boundary_dofs(dof_handler))
@@ -568,6 +580,33 @@ namespace Step77
       initial_step ? nonzero_constraints : zero_constraints;
 
     pcout << "  Solving linear system" << std::endl;
+
+    SolverControl solver_control(dof_handler.n_dofs(), 1e-12);
+
+    #ifdef USE_PETSC_LA
+        LA::SolverCG solver(solver_control, mpi_communicator);
+    #else
+        LA::SolverCG solver(solver_control);
+    #endif
+
+        LA::MPI::PreconditionAMG preconditioner;
+
+        LA::MPI::PreconditionAMG::AdditionalData data;
+
+    #ifdef USE_PETSC_LA
+        data.symmetric_operator = true;
+    #else
+        /* Trilinos defaults are good */
+    #endif
+        preconditioner.initialize(jacobian_matrix, data);
+
+    solver.solve(jacobian_matrix,
+                 solution,
+                 rhs,
+                 preconditioner);
+
+    pcout << "   Solved in " << solver_control.last_step() << " iterations."
+          << std::endl;
 
 
     //jacobian_matrix_factorization->vmult(solution, rhs);
@@ -797,7 +836,7 @@ namespace Step77
           nonlinear_solver.residual =
             [&](const LA::MPI::Vector &evaluation_point,
                 LA::MPI::Vector &      residual) {
-              compute_residual(evaluation_point, residual);
+              compute_residual(evaluation_point, residual, initial_step);
 
               return 0;
             };
