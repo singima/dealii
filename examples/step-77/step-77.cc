@@ -164,7 +164,7 @@ namespace Step77
 
     LA::MPI::Vector current_solution;
 
-    int solver_type = 1;  // 0 - linesearch
+    int solver_type = 2;  // 0 - linesearch
                           // 1 - Newton
                           // 2 - Picard
 
@@ -259,7 +259,7 @@ namespace Step77
         }
 
         // zero constraint section
-        /*
+        
         {
           zero_constraints.clear();
           zero_constraints.reinit(locally_relevant_dofs);
@@ -271,7 +271,7 @@ namespace Step77
                       zero_constraints);
         }
         zero_constraints.close();
-        */
+        
       }
 
     //DynamicSparsityPattern dsp(dof_handler.n_dofs());
@@ -279,7 +279,7 @@ namespace Step77
 
     //DoFTools::make_sparsity_pattern(dof_handler, dsp);
     DoFTools::make_sparsity_pattern(dof_handler, dsp,
-                                    nonzero_constraints, false);
+                                    zero_constraints, false);
 
     // Included for MPI
     SparsityTools::distribute_sparsity_pattern(dsp,
@@ -399,7 +399,7 @@ namespace Step77
             // const AffineConstraints<double> &constraints_used =
             //   initial_step ? nonzero_constraints : zero_constraints;
 
-            nonzero_constraints.distribute_local_to_global(cell_matrix,
+            zero_constraints.distribute_local_to_global(cell_matrix,
                                                         local_dof_indices,
                                                         jacobian_matrix);
 
@@ -525,16 +525,16 @@ namespace Step77
           // const AffineConstraints<double> &constraints_used =
           // initial_step ? nonzero_constraints : zero_constraints;
 
-          nonzero_constraints.distribute_local_to_global(cell_residual,
+          zero_constraints.distribute_local_to_global(cell_residual,
                                                       local_dof_indices,
                                                       residual);
         }
       }
 
-    nonzero_constraints.condense(residual);
+    //zero_constraints.condense(residual);
 
     // TIMO maybe?
-    //nonzero_constraints.set_zero(residual);
+    zero_constraints.set_zero(residual);
     residual.compress(VectorOperation::add);
 
     // for (const types::global_dof_index i :
@@ -609,7 +609,7 @@ namespace Step77
 
     //jacobian_matrix_factorization->vmult(solution, rhs);
 
-    nonzero_constraints.distribute(solution);
+    zero_constraints.distribute(solution);
   }
 
 
