@@ -130,16 +130,14 @@ namespace Step77
     void setup_system(const bool initial_step);
     void solve(const LA::MPI::Vector &rhs,
                LA::MPI::Vector &      solution,
-               const double           tolerance,
-               const bool            &initial_step);
+               const double           tolerance);
     void refine_mesh();
     void output_results(const unsigned int refinement_cycle);
     void set_boundary_values();
     void compute_and_factorize_jacobian(const bool &initial_step,
                                         const LA::MPI::Vector &evaluation_point);
     void compute_residual(const LA::MPI::Vector &evaluation_point,
-                          LA::MPI::Vector &      residual,
-                          const bool            &initial_step);
+                          LA::MPI::Vector &      residual);
 
     MPI_Comm mpi_communicator;
 
@@ -166,7 +164,7 @@ namespace Step77
 
     LA::MPI::Vector current_solution;
 
-    int solver_type = 2;  // 0 - linesearch
+    int solver_type = 1;  // 0 - linesearch
                           // 1 - Newton
                           // 2 - Picard
 
@@ -237,30 +235,31 @@ namespace Step77
 
         current_solution.reinit(locally_owned_dofs,
                                 mpi_communicator);
-        
-        // locally_relevant_solution.reinit(locally_owned_dofs,
-        //                                  locally_relevant_dofs,
-        //                                  mpi_communicator);
-        // system_rhs.reinit(locally_owned_dofs, mpi_communicator);
-        // End of MPI stuff
 
         // nonzero constraint section
         {
-
           nonzero_constraints.clear();
           nonzero_constraints.reinit(locally_relevant_dofs);
           DoFTools::make_hanging_node_constraints(dof_handler,
                                                   nonzero_constraints);
 
-          // Problem right here
+          nonzero_constraints.close();
+
+          nonzero_constraints.distribute(current_solution);
+
+          // Problem right here 
+          std::map<types::global_dof_index, double> boundary_values;
           VectorTools::interpolate_boundary_values(dof_handler,
                                                    0,
                                                    BoundaryValues<dim>(),
-                                                   nonzero_constraints);
+                                                   boundary_values);
+
+          for (const auto &boundary_value : boundary_values)
+            current_solution(boundary_value.first) = boundary_value.second;
         }
-        nonzero_constraints.close();
 
         // zero constraint section
+        /*
         {
           zero_constraints.clear();
           zero_constraints.reinit(locally_relevant_dofs);
@@ -272,6 +271,7 @@ namespace Step77
                       zero_constraints);
         }
         zero_constraints.close();
+        */
       }
 
     //DynamicSparsityPattern dsp(dof_handler.n_dofs());
@@ -367,39 +367,39 @@ namespace Step77
                   {
                     for (unsigned int j = 0; j < dofs_per_cell; ++j)
                     if (solver_type == 0 || solver_type == 1)
-                    {
-                      // Newton iteration (or Newton w/ linesearch)
-                      cell_matrix(i, j) +=
-                        (((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
-                           * coeff                       //   * a_n
-                           * fe_values.shape_grad(j, q)) //   * \nabla \phi_j)
-                          -                              //  -
-                          (fe_values.shape_grad(i, q)    //  (\nabla \phi_i
-                           * coeff * coeff * coeff       //   * a_n^3
-                           *
-                           (fe_values.shape_grad(j, q)       //   * (\nabla \phi_j
-                            * evaluation_point_gradients[q]) //      * \nabla u_n)
-                           * evaluation_point_gradients[q])) //   * \nabla u_n)))
-                         * fe_values.JxW(q));                // * dx
-                      }
-                      else if (solver_type == 2)
                       {
-                        // Picard iteration
+                        // Newton iteration (or Newton w/ linesearch)
                         cell_matrix(i, j) +=
-                          ((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
-                             * coeff                       //   * a_n
-                             * fe_values.shape_grad(j, q)) //   * \nabla u_n)))
-                           * fe_values.JxW(q));                // * dx
-                      }
+                          (((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
+                            * coeff                       //   * a_n
+                            * fe_values.shape_grad(j, q)) //   * \nabla \phi_j)
+                            -                              //  -
+                            (fe_values.shape_grad(i, q)    //  (\nabla \phi_i
+                            * coeff * coeff * coeff       //   * a_n^3
+                            *
+                            (fe_values.shape_grad(j, q)       //   * (\nabla \phi_j
+                              * evaluation_point_gradients[q]) //      * \nabla u_n)
+                            * evaluation_point_gradients[q])) //   * \nabla u_n)))
+                          * fe_values.JxW(q));                // * dx
+                        }
+                      else if (solver_type == 2)
+                        {
+                          // Picard iteration
+                          cell_matrix(i, j) +=
+                            ((fe_values.shape_grad(i, q)    // ((\nabla \phi_i
+                              * coeff                       //   * a_n
+                              * fe_values.shape_grad(j, q)) //   * \nabla u_n)))
+                            * fe_values.JxW(q));                // * dx
+                        }
                   }
               }
 
             cell->get_dof_indices(local_dof_indices);
 
-            const AffineConstraints<double> &constraints_used =
-              initial_step ? nonzero_constraints : zero_constraints;
+            // const AffineConstraints<double> &constraints_used =
+            //   initial_step ? nonzero_constraints : zero_constraints;
 
-            constraints_used.distribute_local_to_global(cell_matrix,
+            nonzero_constraints.distribute_local_to_global(cell_matrix,
                                                         local_dof_indices,
                                                         jacobian_matrix);
 
@@ -465,8 +465,7 @@ namespace Step77
   template <int dim>
   void MinimalSurfaceProblem<dim>::compute_residual(
     const LA::MPI::Vector &evaluation_point,
-    LA::MPI::Vector &      residual,
-    const bool &initial_step)
+    LA::MPI::Vector &      residual)
   {
     TimerOutput::Scope t(computing_timer, "assembling the residual");
 
@@ -523,19 +522,19 @@ namespace Step77
           // for (unsigned int i = 0; i < dofs_per_cell; ++i)
           //   residual(local_dof_indices[i]) += cell_residual(i);
 
-          const AffineConstraints<double> &constraints_used =
-          initial_step ? nonzero_constraints : zero_constraints;
+          // const AffineConstraints<double> &constraints_used =
+          // initial_step ? nonzero_constraints : zero_constraints;
 
-          constraints_used.distribute_local_to_global(cell_residual,
+          nonzero_constraints.distribute_local_to_global(cell_residual,
                                                       local_dof_indices,
                                                       residual);
         }
       }
 
-    //nonzero_constraints.condense(residual);
+    nonzero_constraints.condense(residual);
 
     // TIMO maybe?
-    nonzero_constraints.set_zero(residual);
+    //nonzero_constraints.set_zero(residual);
     residual.compress(VectorOperation::add);
 
     // for (const types::global_dof_index i :
@@ -571,13 +570,12 @@ namespace Step77
   template <int dim>
   void MinimalSurfaceProblem<dim>::solve(const LA::MPI::Vector &rhs,
                                          LA::MPI::Vector &      solution,
-                                         const double /*tolerance*/,
-                                         const bool &initial_step)
+                                         const double /*tolerance*/)
   {
     TimerOutput::Scope t(computing_timer, "linear system solve");
 
-    const AffineConstraints<double> &constraints_used =
-      initial_step ? nonzero_constraints : zero_constraints;
+    // const AffineConstraints<double> &constraints_used =
+    //   initial_step ? nonzero_constraints : zero_constraints;
 
     pcout << "  Solving linear system" << std::endl;
 
@@ -611,7 +609,7 @@ namespace Step77
 
     //jacobian_matrix_factorization->vmult(solution, rhs);
 
-    constraints_used.distribute(solution);
+    nonzero_constraints.distribute(solution);
   }
 
 
@@ -695,14 +693,23 @@ namespace Step77
     DataOut<dim> data_out;
 
     data_out.attach_dof_handler(dof_handler);
-    // TIMO: ghosted vector?
     data_out.add_data_vector(current_solution, "solution");
+
+    // copied from step-40
+    Vector<float> subdomain(triangulation.n_active_cells());
+    for (unsigned int i = 0; i < subdomain.size(); ++i)
+      subdomain(i) = triangulation.locally_owned_subdomain();
+    data_out.add_data_vector(subdomain, "subdomain");
+
     data_out.build_patches();
 
-    const std::string filename =
-      "solution-" + Utilities::int_to_string(refinement_cycle, 2) + ".vtu";
-    std::ofstream output(filename);
-    data_out.write_vtu(output);
+    // const std::string filename =
+    //   "solution-" + Utilities::int_to_string(refinement_cycle, 2) + ".vtu";
+    // std::ofstream output(filename);
+    // data_out.write_vtu(output);
+
+    data_out.write_vtu_with_pvtu_record(
+      "./", "solution", refinement_cycle, mpi_communicator, 2, 8);
   }
 
 
@@ -738,7 +745,7 @@ namespace Step77
           << " MPI rank(s)..." << std::endl;
 
     GridGenerator::hyper_ball(triangulation);
-    triangulation.refine_global(2);
+    triangulation.refine_global(4);
 
     const bool initial_step = true;
 
@@ -836,7 +843,7 @@ namespace Step77
           nonlinear_solver.residual =
             [&](const LA::MPI::Vector &evaluation_point,
                 LA::MPI::Vector &      residual) {
-              compute_residual(evaluation_point, residual, initial_step);
+              compute_residual(evaluation_point, residual);
 
               return 0;
             };
@@ -852,7 +859,7 @@ namespace Step77
           nonlinear_solver.solve_with_jacobian = [&](const LA::MPI::Vector &rhs,
                                                      LA::MPI::Vector &      dst,
                                                      const double tolerance) {
-            this->solve(rhs, dst, tolerance, initial_step);
+            this->solve(rhs, dst, tolerance);
 
             return 0;
           };
