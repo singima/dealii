@@ -38,6 +38,8 @@
 #  include <sundials/sundials_math.h>
 #  include <sundials/sundials_types.h>
 
+#  include <deal.II/numerics/nonlinear.h>
+
 #  include <memory>
 
 
@@ -180,7 +182,7 @@ namespace SUNDIALS
    *  - get_function_scaling;
    */
   template <typename VectorType = Vector<double>>
-  class KINSOL
+  class KINSOL : public Nonlinear_Solver<VectorType>
   {
   public:
     /**

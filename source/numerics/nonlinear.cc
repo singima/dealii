@@ -17,6 +17,8 @@
 
 #include <deal.II/base/config.h>
 
+#include <deal.II/numerics/nonlinear.h>
+
 #  include <deal.II/base/utilities.h>
 
 #  include <deal.II/lac/block_vector.h>
@@ -35,6 +37,7 @@
 #  include <iostream>
 
 DEAL_II_NAMESPACE_OPEN
+
 
   template <typename VectorType>
   Nonlinear_Solver<VectorType>::AdditionalData::AdditionalData(
@@ -118,90 +121,9 @@ DEAL_II_NAMESPACE_OPEN
   {
     template <typename VectorType>
     int
-    residual_callback(N_Vector yy, N_Vector FF, void *user_data)
+    residual_callback()
     {
-      KINSOL<VectorType> &solver =
-        *static_cast<KINSOL<VectorType> *>(user_data);
-      GrowingVectorMemory<VectorType> mem;
-
-      typename VectorMemory<VectorType>::Pointer src_yy(mem);
-      solver.reinit_vector(*src_yy);
-
-      typename VectorMemory<VectorType>::Pointer dst_FF(mem);
-      solver.reinit_vector(*dst_FF);
-
-      internal::copy(*src_yy, yy);
-
-      int err = 0;
-      if (solver.residual)
-        err = solver.residual(*src_yy, *dst_FF);
-      else
-        Assert(false, ExcInternalError());
-
-      internal::copy(FF, *dst_FF);
-
-      return err;
-    }
-
-
-
-    template <typename VectorType>
-    int
-    iteration_callback(N_Vector yy, N_Vector FF, void *user_data)
-    {
-      KINSOL<VectorType> &solver =
-        *static_cast<KINSOL<VectorType> *>(user_data);
-      GrowingVectorMemory<VectorType> mem;
-
-      typename VectorMemory<VectorType>::Pointer src_yy(mem);
-      solver.reinit_vector(*src_yy);
-
-      typename VectorMemory<VectorType>::Pointer dst_FF(mem);
-      solver.reinit_vector(*dst_FF);
-
-      internal::copy(*src_yy, yy);
-
-      int err = 0;
-      if (solver.iteration_function)
-        err = solver.iteration_function(*src_yy, *dst_FF);
-      else
-        Assert(false, ExcInternalError());
-
-      internal::copy(FF, *dst_FF);
-
-      return err;
-    }
-
-
-
-    template <typename VectorType>
-    int
-    setup_jacobian_callback(N_Vector u,
-                            N_Vector f,
-                            SUNMatrix /* ignored */,
-                            void *user_data,
-                            N_Vector /* tmp1 */,
-                            N_Vector /* tmp2 */)
-    {
-      // Receive the object that describes the linear solver and
-      // unpack the pointer to the KINSOL object from which we can then
-      // get the 'setup' function.
-      const KINSOL<VectorType> &solver =
-        *static_cast<const KINSOL<VectorType> *>(user_data);
-
-      // Allocate temporary (deal.II-type) vectors into which to copy the
-      // N_vectors
-      GrowingVectorMemory<VectorType>            mem;
-      typename VectorMemory<VectorType>::Pointer ycur(mem);
-      typename VectorMemory<VectorType>::Pointer fcur(mem);
-      solver.reinit_vector(*ycur);
-      solver.reinit_vector(*fcur);
-
-      internal::copy(*ycur, u);
-      internal::copy(*fcur, f);
-
-      // Call the user-provided setup function with these arguments:
-      solver.setup_jacobian(*ycur, *fcur);
+      std::cout << "polymorphism...?" << std::endl;
 
       return 0;
     }
@@ -210,145 +132,107 @@ DEAL_II_NAMESPACE_OPEN
 
     template <typename VectorType>
     int
-    solve_with_jacobian_callback(SUNLinearSolver LS,
-                                 SUNMatrix /*ignored*/,
-                                 N_Vector x,
-                                 N_Vector b,
-                                 realtype tol)
+    iteration_callback()
     {
-      // Receive the object that describes the linear solver and
-      // unpack the pointer to the KINSOL object from which we can then
-      // get the 'reinit' and 'solve' functions.
-      const KINSOL<VectorType> &solver =
-        *static_cast<const KINSOL<VectorType> *>(LS->content);
+      std::cout << "polymorphism...?" << std::endl;
 
-      // This is where we have to make a decision about which of the two
-      // signals to call. Let's first check the more modern one:
-      if (solver.solve_with_jacobian)
-        {
-          // Allocate temporary (deal.II-type) vectors into which to copy the
-          // N_vectors
-          GrowingVectorMemory<VectorType>            mem;
-          typename VectorMemory<VectorType>::Pointer src_b(mem);
-          typename VectorMemory<VectorType>::Pointer dst_x(mem);
+      return 0;
+    }
 
-          solver.reinit_vector(*src_b);
-          solver.reinit_vector(*dst_x);
 
-          internal::copy(*src_b, b);
 
-          const int err = solver.solve_with_jacobian(*src_b, *dst_x, tol);
+    template <typename VectorType>
+    int
+    setup_jacobian_callback()
+    {
+      std::cout << "polymorphism...?" << std::endl;
 
-          internal::copy(x, *dst_x);
+      return 0;
+    }
 
-          return err;
-        }
-      else
-        {
-          // User has not provided the modern callback, so the fact that we are
-          // here means that they must have given us something for the old
-          // signal. Check this.
-          Assert(solver.solve_jacobian_system, ExcInternalError());
 
-          // Allocate temporary (deal.II-type) vectors into which to copy the
-          // N_vectors
-          GrowingVectorMemory<VectorType>            mem;
-          typename VectorMemory<VectorType>::Pointer src_ycur(mem);
-          typename VectorMemory<VectorType>::Pointer src_fcur(mem);
-          typename VectorMemory<VectorType>::Pointer src_b(mem);
-          typename VectorMemory<VectorType>::Pointer dst_x(mem);
 
-          solver.reinit_vector(*src_b);
-          solver.reinit_vector(*dst_x);
+    template <typename VectorType>
+    int
+    solve_with_jacobian_callback()
+    {
+      std::cout << "polymorphism...?" << std::endl;
 
-          internal::copy(*src_b, b);
-
-          // Call the user-provided setup function with these arguments. Note
-          // that Sundials 4.x and later no longer provide values for
-          // src_ycur and src_fcur, and so we simply pass dummy vector in.
-          // These vectors will have zero lengths because we don't reinit them
-          // above.
-          const int err =
-            solver.solve_jacobian_system(*src_ycur, *src_fcur, *src_b, *dst_x);
-
-          internal::copy(x, *dst_x);
-
-          return err;
-        }
+      return 0;
     }
   } // namespace
 
 
 
   template <typename VectorType>
-  KINSOL<VectorType>::KINSOL(const AdditionalData &data)
-    : KINSOL(data, MPI_COMM_SELF)
+  Nonlinear_Solver<VectorType>::Nonlinear_Solver(const AdditionalData &data)
+    : Nonlinear_Solver(data, MPI_COMM_SELF)
   {}
 
 
 
-  template <typename VectorType>
-  Nonlinear_Solver<VectorType>::Nonlinear_Solver(
-    const AdditionalData &data,
-    const MPI_Comm &      mpi_comm)
-    : data(data)
-    , mpi_communicator(mpi_comm)
-    , Nonlinear_Solver_mem(nullptr)
-    , solution(nullptr)
-    , u_scale(nullptr)
-    , f_scale(nullptr)
-  {
-    set_functions_to_trigger_an_assert();
-  }
+  // template <typename VectorType>
+  // Nonlinear_Solver<VectorType>::Nonlinear_Solver(
+  //   const AdditionalData &data,
+  //   const MPI_Comm &      mpi_comm)
+  //   : data(data)
+  //   , mpi_communicator(mpi_comm)
+  //   , Nonlinear_Solver_mem(nullptr)
+  //   , solution(nullptr)
+  //   , u_scale(nullptr)
+  //   , f_scale(nullptr)
+  // {
+  //   set_functions_to_trigger_an_assert();
+  // }
 
 
 
-  template <typename VectorType>
-  KINSOL<VectorType>::~KINSOL()
-  {
-    std::cout << "idk what should be here" << std::endl;
-  }
+  // template <typename VectorType>
+  // Nonlinear_Solver<VectorType>::~Nonlinear_Solver()
+  // {
+  //   std::cout << "idk what should be here" << std::endl;
+  // }
 
 
 
-  template <typename VectorType>
-  unsigned int
-  Nonlinear_Solver<VectorType>::solve(VectorType &initial_guess_and_solution)
-  {
-    std::cout << "This function shouldn't be called because polymorphism" << std::endl;
+//   template <typename VectorType>
+//   unsigned int
+//   Nonlinear_Solver<VectorType>::solve(VectorType &initial_guess_and_solution)
+//   {
+//     std::cout << "This function shouldn't be called because polymorphism" << std::endl;
 
-    return 0;
-  }
+//     return 0;
+//   }
 
-  template <typename VectorType>
-  void
-  Nonlinear_Solver<VectorType>::set_functions_to_trigger_an_assert()
-  {
-    reinit_vector = [](VectorType &) {
-      AssertThrow(false, ExcFunctionNotProvided("reinit_vector"));
-    };
-  }
+//   template <typename VectorType>
+//   void
+//   Nonlinear_Solver<VectorType>::set_functions_to_trigger_an_assert()
+//   {
+//     reinit_vector = [](VectorType &) {
+//       AssertThrow(false, ExcFunctionNotProvided("reinit_vector"));
+//     };
+//   }
 
-  template class Nonlinear_Solver<Vector<double>>;
-  template class Nonlinear_Solver<BlockVector<double>>;
+//   template class Nonlinear_Solver<Vector<double>>;
+//   template class Nonlinear_Solver<BlockVector<double>>;
 
-  template class Nonlinear_Solver<LinearAlgebra::distributed::Vector<double>>;
-  template class Nonlinear_Solver<LinearAlgebra::distributed::BlockVector<double>>;
+//   template class Nonlinear_Solver<LinearAlgebra::distributed::Vector<double>>;
+//   template class Nonlinear_Solver<LinearAlgebra::distributed::BlockVector<double>>;
 
-#  ifdef DEAL_II_WITH_MPI
+// #  ifdef DEAL_II_WITH_MPI
 
-#    ifdef DEAL_II_WITH_TRILINOS
-  template class Nonlinear_Solver<TrilinosWrappers::MPI::Vector>;
-  template class Nonlinear_Solver<TrilinosWrappers::MPI::BlockVector>;
-#    endif
+// #    ifdef DEAL_II_WITH_TRILINOS
+//   template class Nonlinear_Solver<TrilinosWrappers::MPI::Vector>;
+//   template class Nonlinear_Solver<TrilinosWrappers::MPI::BlockVector>;
+// #    endif
 
-#    ifdef DEAL_II_WITH_PETSC
-#      ifndef PETSC_USE_COMPLEX
-  template class Nonlinear_Solver<PETScWrappers::MPI::Vector>;
-  template class Nonlinear_Solver<PETScWrappers::MPI::BlockVector>;
-#      endif
-#    endif
+// #    ifdef DEAL_II_WITH_PETSC
+// #      ifndef PETSC_USE_COMPLEX
+//   template class Nonlinear_Solver<PETScWrappers::MPI::Vector>;
+//   template class Nonlinear_Solver<PETScWrappers::MPI::BlockVector>;
+// #      endif
+// #    endif
 
-#  endif
+// #  endif
 
 DEAL_II_NAMESPACE_CLOSE

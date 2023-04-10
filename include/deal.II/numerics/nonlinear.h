@@ -39,6 +39,7 @@ template <typename VectorType = Vector<double>>
 class Nonlinear_Solver
 {
 public:
+
 /**
  * Additional parameters that can be passed to the Nonlinear_Solver class.
  */
@@ -70,12 +71,12 @@ public:
     /**
      * KINSOL, part of the SUNDIALS package
      */
-    kinsol = KINSOL;
+    kinsol,
     /**
      * NOX, part of the Trilinos package
      */
-    nox = N
-    }
+    nox
+    };
 
     
     AdditionalData(const SolverType &solvertype = kinsol,
@@ -117,45 +118,45 @@ public:
     unsigned int anderson_subspace_size;
 };
 
-Nonlinear_Solver(const AdditionalData &data = AdditionalData());
+// Nonlinear_Solver(const AdditionalData &data = AdditionalData());
 
-Nonlinear_Solver(const AdditionalData &data, const MPI_Comm &mpi_comm);
+// Nonlinear_Solver(const AdditionalData &data, const MPI_Comm &mpi_comm);
 
-~Nonlinear_Solver();
+// ~Nonlinear_Solver();
 
-unsigned int
-solve(VectorType &initial_guess_and_solution);
+// unsigned int
+// solve(VectorType &initial_guess_and_solution);
 
-std::function<void(VectorType &)> reinit_vector;
+// std::function<void(VectorType &)> reinit_vector;
 
-std::function<int(const VectorType &src, VectorType &dst)> residual;
+// std::function<int(const VectorType &src, VectorType &dst)> residual;
 
-std::function<int(const VectorType &src, VectorType &dst)>
-    iteration_function;
+// std::function<int(const VectorType &src, VectorType &dst)>
+//     iteration_function;
 
-std::function<int(const VectorType &current_u, const VectorType &current_f)>
-    setup_jacobian;
+// std::function<int(const VectorType &current_u, const VectorType &current_f)>
+//     setup_jacobian;
 
-DEAL_II_DEPRECATED
-std::function<int(const VectorType &ycur,
-                    const VectorType &fcur,
-                    const VectorType &rhs,
-                    VectorType &      dst)>
-    solve_jacobian_system;
+// DEAL_II_DEPRECATED
+// std::function<int(const VectorType &ycur,
+//                     const VectorType &fcur,
+//                     const VectorType &rhs,
+//                     VectorType &      dst)>
+//     solve_jacobian_system;
 
-std::function<
-    int(const VectorType &rhs, VectorType &dst, const double tolerance)>
-    solve_with_jacobian;
+// std::function<
+//     int(const VectorType &rhs, VectorType &dst, const double tolerance)>
+//     solve_with_jacobian;
 
-std::function<VectorType &()> get_solution_scaling;
+// std::function<VectorType &()> get_solution_scaling;
 
-std::function<VectorType &()> get_function_scaling;
+// std::function<VectorType &()> get_function_scaling;
 
-// DeclException1(ExcKINSOLError,
-//                 int,
-//                 << "One of the SUNDIALS KINSOL internal functions "
-//                 << "returned a negative error code: " << arg1
-//                 << ". Please consult SUNDIALS manual.");
+// // DeclException1(ExcKINSOLError,
+// //                 int,
+// //                 << "One of the SUNDIALS KINSOL internal functions "
+// //                 << "returned a negative error code: " << arg1
+// //                 << ". Please consult SUNDIALS manual.");
 
 
 private:
@@ -170,17 +171,17 @@ set_functions_to_trigger_an_assert();
 
 AdditionalData data;
 
-MPI_Comm mpi_communicator;
+// MPI_Comm mpi_communicator;
 
-void *Nonlinear_Solver_mem;
+// void *Nonlinear_Solver_mem;
 
-N_Vector solution;
+// N_Vector solution;
 
-N_Vector u_scale;
+// N_Vector u_scale;
 
-N_Vector f_scale;
+// N_Vector f_scale;
 
-GrowingVectorMemory<VectorType> mem;
+// GrowingVectorMemory<VectorType> mem;
 };
 
 
