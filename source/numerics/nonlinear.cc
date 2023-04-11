@@ -40,7 +40,7 @@ DEAL_II_NAMESPACE_OPEN
 
 
   template <typename VectorType>
-  Nonlinear_Solver<VectorType>::AdditionalData::AdditionalData(
+  Nonlinear_Solver<VectorType>::AdditionalData_NL::AdditionalData_NL(
     const SolverType       &solvertype,
     const SolutionStrategy &strategy,
     const unsigned int      maximum_non_linear_iterations,
@@ -69,7 +69,7 @@ DEAL_II_NAMESPACE_OPEN
 
   template <typename VectorType>
   void
-  Nonlinear_Solver<VectorType>::AdditionalData::add_parameters(ParameterHandler &prm)
+  Nonlinear_Solver<VectorType>::_NL::add_parameters(ParameterHandler &prm)
   {
     static std::string strategy_str("newton");
     prm.add_parameter("Solution strategy",
@@ -165,7 +165,7 @@ DEAL_II_NAMESPACE_OPEN
 
 
   template <typename VectorType>
-  Nonlinear_Solver<VectorType>::Nonlinear_Solver(const AdditionalData &data)
+  Nonlinear_Solver<VectorType>::Nonlinear_Solver(const AdditionalData_NL &data)
     : Nonlinear_Solver(data, MPI_COMM_SELF)
   {}
 

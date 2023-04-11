@@ -43,7 +43,7 @@ public:
 /**
  * Additional parameters that can be passed to the Nonlinear_Solver class.
  */
-class AdditionalData
+class AdditionalData_NL
 {
 public:
     enum SolutionStrategy
@@ -79,7 +79,7 @@ public:
     };
 
     
-    AdditionalData(const SolverType &solvertype = kinsol,
+    AdditionalData_NL(const SolverType &solvertype = kinsol,
                     const SolutionStrategy &strategy = linesearch,
                     const unsigned int maximum_non_linear_iterations = 200,
                     const double       function_tolerance            = 0.0,
@@ -118,9 +118,9 @@ public:
     unsigned int anderson_subspace_size;
 };
 
-// Nonlinear_Solver(const AdditionalData &data = AdditionalData());
+// Nonlinear_Solver(const AdditionalData_NL &data = AdditionalData_NL());
 
-// Nonlinear_Solver(const AdditionalData &data, const MPI_Comm &mpi_comm);
+Nonlinear_Solver(const AdditionalData_NL &data, const MPI_Comm &mpi_comm);
 
 // ~Nonlinear_Solver();
 
@@ -169,7 +169,7 @@ DeclException1(ExcFunctionNotProvided,
 void
 set_functions_to_trigger_an_assert();
 
-AdditionalData data;
+// AdditionalData_NL data;
 
 // MPI_Comm mpi_communicator;
 
